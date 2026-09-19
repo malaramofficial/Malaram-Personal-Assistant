@@ -15,8 +15,8 @@ android {
         applicationId = "com.malaram.assistant"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.1.0"
+        versionCode = 4
+        versionName = "1.2.0"
     }
 
     compileOptions {
@@ -35,10 +35,6 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
-
-    // Official Sherpa-ONNX Android AAR. Downloaded and SHA-256 verified by GitHub Actions.
     implementation(files("libs/sherpa-onnx-1.13.8.aar"))
-
-    // Used only on first run to unpack the official Piper Hindi voice model.
     implementation("org.apache.commons:commons-compress:1.27.1")
 }
