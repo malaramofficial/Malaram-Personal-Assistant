@@ -174,7 +174,7 @@ class WakeWordService : Service() {
         waitingCommand = true
         cleanupAudio()
         updateNotification("जाग गया। आदेश सुन रहा हूँ…")
-        if (ttsReady) tts.speak("जी, बताइए।")
+        // Wake acknowledgement is intentionally silent to avoid feeding our own voice back into the mic.
         handler.postDelayed({ startCommandRecognition() }, 900L)
     }
 
