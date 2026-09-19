@@ -43,6 +43,13 @@
             android:text="🎙️ बोलकर आदेश दें"/>
 
         <Button
+            android:id="@+id/wakeWordButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="🎙️ Hello Assistant चालू करें"/>
+
+        <Button
             android:id="@+id/testVoiceButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -68,7 +75,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
-            android:text="उदाहरण:\n• YouTube खोलो\n• WhatsApp खोलो\n• Google पर राजस्थान मौसम खोजो\n• वापस जाओ\n• होम पर जाओ\n• ऊपर स्क्रोल करो\n• नीचे स्क्रोल करो"
+            android:text="उदाहरण:\n• “Hello Assistant” → फिर आदेश बोलें\n• YouTube खोलो\n• WhatsApp खोलो\n• Google पर राजस्थान मौसम खोजो\n• वापस जाओ\n• होम पर जाओ\n• ऊपर स्क्रोल करो\n• नीचे स्क्रोल करो"
             android:textSize="16sp"/>
     </LinearLayout>
 </ScrollView>
