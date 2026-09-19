@@ -53,14 +53,23 @@ object CommandEngine {
             text.contains("सेटिंग") || text.contains("settings") ->
                 openSettings(context)
 
-            text.contains("रिप्लाई क्या आया") || text.contains("रिप्लाई बताओ") || text.contains("जवाब क्या आया") || text.contains("मैसेज क्या आया") ->
+            text.contains("रिप्लाई क्या आया") || text.contains("रिप्लाई बताओ") ||
+                text.contains("जवाब क्या आया") || text.contains("मैसेज क्या आया") ->
                 NotificationReplyStore.describeLatest()
 
             text.startsWith("जवाब लिखो ") || text.startsWith("reply लिखो ") -> {
-                val draft = raw.substringAfter(" ").trim()
+                val draft = when {
+                    text.startsWith("जवाब लिखो ") -> raw.substring("जवाब लिखो ".length).trim()
+                    text.startsWith("reply लिखो ") -> raw.substring("reply लिखो ".length).trim()
+                    else -> ""
+                }
+
                 if (draft.isBlank()) "क्या जवाब लिखना है?"
-                else if (AssistantAccessibilityService.setFocusedText(draft)) "जवाब लिख दिया है। भेजने से पहले आपकी पुष्टि जरूरी है।"
-                else "चैट का लिखने वाला बॉक्स नहीं मिला।" 
+                else if (AssistantAccessibilityService.setFocusedText(draft)) {
+                    "जवाब लिख दिया है। भेजने से पहले आपकी पुष्टि जरूरी है।"
+                } else {
+                    "चैट का लिखने वाला बॉक्स नहीं मिला।"
+                }
             }
 
             text.contains("गूगल") || text.contains("google") || text.startsWith("सर्च") ->
@@ -113,10 +122,7 @@ object CommandEngine {
         if (query.isEmpty()) {
             launchUrl(context, "https://www.google.com")
         } else {
-            launchUrl(
-                context,
-                "https://www.google.com/search?q=" + Uri.encode(query)
-            )
+            launchUrl(context, "https://www.google.com/search?q=" + Uri.encode(query))
         }
         return if (query.isEmpty()) "गूगल खोल रहा हूँ।" else "$query खोज रहा हूँ।"
     }
