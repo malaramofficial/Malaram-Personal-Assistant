@@ -30,6 +30,10 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.accessibilityButton).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
+        findViewById<Button>(R.id.notificationButton).setOnClickListener {
+            startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+        }
+        NotificationReplyStore.restore(this)
 
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 10)
