@@ -2,7 +2,9 @@ name: Android APK Build
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - "main"
+      - "github-open-source-integration"
   workflow_dispatch:
 
 jobs:
@@ -34,15 +36,12 @@ jobs:
           set -euo pipefail
           MODEL_DIR="sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
           MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/$MODEL_DIR.tar.bz2"
-
           mkdir -p /tmp/kws app/src/main/assets/wakeword
           curl -fL --retry 4 --retry-delay 2 -o /tmp/kws/model.tar.bz2 "$MODEL_URL"
           tar -xjf /tmp/kws/model.tar.bz2 -C /tmp/kws
-
           python3 -m pip install --disable-pip-version-check --no-cache-dir sentencepiece
           python3 - <<'PY'
           import sentencepiece as spm
-
           model = "/tmp/kws/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01/bpe.model"
           output = "/tmp/kws/keywords.txt"
           sp = spm.SentencePieceProcessor(model_file=model)
@@ -51,16 +50,12 @@ jobs:
               f.write(" ".join(pieces) + "\n")
           print("Keyword pieces:", " ".join(pieces))
           PY
-
           cp "/tmp/kws/$MODEL_DIR/encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx" app/src/main/assets/wakeword/
           cp "/tmp/kws/$MODEL_DIR/decoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx" app/src/main/assets/wakeword/
           cp "/tmp/kws/$MODEL_DIR/joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx" app/src/main/assets/wakeword/
           cp "/tmp/kws/$MODEL_DIR/tokens.txt" app/src/main/assets/wakeword/
           cp /tmp/kws/keywords.txt app/src/main/assets/wakeword/
-
-          echo "Wake-word assets:"
           ls -lh app/src/main/assets/wakeword
-          echo "Generated keyword tokens:"
           cat app/src/main/assets/wakeword/keywords.txt
 
       - name: Set up Gradle
