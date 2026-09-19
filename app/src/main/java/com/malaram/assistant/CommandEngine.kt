@@ -34,6 +34,13 @@ object CommandEngine {
                 if (AssistantAccessibilityService.instance?.swipeDown() == true) "नीचे स्क्रोल कर रहा हूँ।"
                 else "Accessibility Service चालू नहीं है।"
 
+            text.startsWith("क्लिक ") || text.startsWith("click ") -> {
+                val target = raw.substringAfter(" ").trim()
+                if (target.isBlank()) "किस चीज़ पर क्लिक करना है?"
+                else if (AssistantAccessibilityService.clickText(target)) "क्लिक कर दिया।"
+                else "स्क्रीन पर $target नहीं मिला।"
+            }
+
             text.contains("youtube") || text.contains("यूट्यूब") ->
                 openAppOrUrl(context, "com.google.android.youtube", "https://www.youtube.com", "YouTube खोल रहा हूँ।")
 
