@@ -9,6 +9,10 @@ import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.widget.Button
 import android.widget.TextView
+import android.text.InputType
+import android.widget.EditText
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 
 class MainActivity : Activity() {
@@ -37,6 +41,7 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.testVoiceButton).setOnClickListener {
             speak("नमस्ते माला राम जी, मैं आपकी पर्सनल असिस्टेंट हूँ। बताइए, मैं आपके लिए क्या करूँ?")
         }
+        findViewById<Button>(R.id.aiSettingsButton).setOnClickListener { showAiSettings() }
         findViewById<Button>(R.id.accessibilityButton).setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
@@ -65,6 +70,16 @@ class MainActivity : Activity() {
         updateWakeWordButton()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (isWakeWordEnabled() &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            startWakeWordService()
+        }
+    }
+
     private fun toggleWakeWord() {
         if (isWakeWordEnabled()) {
             stopService(Intent(this, WakeWordService::class.java).apply {
@@ -88,12 +103,7 @@ class MainActivity : Activity() {
         }
 
         try {
-            ContextCompat.startForegroundService(
-                this,
-                Intent(this, WakeWordService::class.java).apply {
-                    action = WakeWordService.ACTION_START
-                }
-            )
+            startWakeWordService()
             getSharedPreferences(PREFS, MODE_PRIVATE)
                 .edit()
                 .putBoolean(WAKE_ENABLED, true)
@@ -103,6 +113,48 @@ class MainActivity : Activity() {
         } catch (e: Exception) {
             status.text = "Wake word शुरू नहीं हो सका: " + (e.message ?: "अज्ञात त्रुटि")
         }
+    }
+
+    private fun startWakeWordService() {
+        try {
+            ContextCompat.startForegroundService(
+                this,
+                Intent(this, WakeWordService::class.java).apply {
+                    action = WakeWordService.ACTION_START
+                }
+            )
+        } catch (e: Exception) {
+            status.text = "Hands-free mode शुरू नहीं हुआ: " + (e.message ?: "अज्ञात त्रुटि")
+        }
+    }
+
+    private fun showAiSettings() {
+        val input = EditText(this).apply {
+            hint = "Gemini API key"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine(true)
+            setText(
+                getSharedPreferences("assistant_ai", MODE_PRIVATE)
+                    .getString("gemini_api_key", "")
+            )
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("🧠 Assistant AI Brain")
+            .setMessage("Gemini API key डालने के बाद Assistant सामान्य सवालों का AI जवाब देगा।")
+            .setView(input)
+            .setPositiveButton("सेव करें") { _, _ ->
+                val key = input.text.toString().trim()
+                if (key.isBlank()) {
+                    AiBrain.clearApiKey(this)
+                    Toast.makeText(this, "AI key हटा दी गई।", Toast.LENGTH_SHORT).show()
+                } else {
+                    AiBrain.setApiKey(this, key)
+                    Toast.makeText(this, "AI Brain तैयार है।", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("रद्द", null)
+            .show()
     }
 
     private fun isWakeWordEnabled(): Boolean =
@@ -152,7 +204,15 @@ class MainActivity : Activity() {
         status.text = "सुना: $heard"
         val response = CommandEngine.execute(this, heard)
         history.add(heard, response)
-        speak(response)
+        if (response.startsWith("मैंने सुना:")) {
+            status.text = "AI सोच रहा है…"
+            AiBrain.ask(this, heard) { answer ->
+                history.add(heard, answer)
+                speak(answer)
+            }
+        } else {
+            speak(response)
+        }
     }
 
     private fun speak(message: String) {
