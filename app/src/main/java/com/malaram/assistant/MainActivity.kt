@@ -12,6 +12,7 @@ import android.widget.TextView
 class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var femaleTts: HindiFemaleTts
+    private lateinit var history: CommandHistory
     private var ttsReady = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -20,6 +21,7 @@ class MainActivity : Activity() {
 
         status = findViewById(R.id.status)
         femaleTts = HindiFemaleTts(this)
+        history = CommandHistory(this)
 
         findViewById<Button>(R.id.listenButton).setOnClickListener { listen() }
         findViewById<Button>(R.id.testVoiceButton).setOnClickListener {
@@ -66,14 +68,14 @@ class MainActivity : Activity() {
             ?.firstOrNull() ?: return
 
         status.text = "सुना: $heard"
-        speak(CommandEngine.execute(this, heard))
+        val response = CommandEngine.execute(this, heard)
+        history.add(heard, response)
+        speak(response)
     }
 
     private fun speak(message: String) {
         status.text = message
-        if (ttsReady) {
-            femaleTts.speak(message)
-        }
+        if (ttsReady) femaleTts.speak(message)
     }
 
     override fun onDestroy() {
