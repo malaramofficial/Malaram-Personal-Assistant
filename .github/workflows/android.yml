@@ -40,14 +40,17 @@ jobs:
           tar -xjf /tmp/kws/model.tar.bz2 -C /tmp/kws
 
           python3 -m pip install --disable-pip-version-check --no-cache-dir sentencepiece
-          git clone --depth 1 --branch v1.13.8 https://github.com/k2-fsa/sherpa-onnx.git /tmp/sherpa-onnx
+          python3 - <<'PY'
+          import sentencepiece as spm
 
-          printf 'HELLO ASSISTANT\n' > /tmp/kws/keywords_raw.txt
-          PYTHONPATH=/tmp/sherpa-onnx/sherpa-onnx/python python3 /tmp/sherpa-onnx/scripts/text2token.py \
-            --tokens "/tmp/kws/$MODEL_DIR/tokens.txt" \
-            --tokens-type bpe \
-            --bpe-model "/tmp/kws/$MODEL_DIR/bpe.model" \
-            /tmp/kws/keywords_raw.txt /tmp/kws/keywords.txt
+          model = "/tmp/kws/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01/bpe.model"
+          output = "/tmp/kws/keywords.txt"
+          sp = spm.SentencePieceProcessor(model_file=model)
+          pieces = sp.encode("HELLO ASSISTANT", out_type=str)
+          with open(output, "w", encoding="utf-8") as f:
+              f.write(" ".join(pieces) + "\n")
+          print("Keyword pieces:", " ".join(pieces))
+          PY
 
           cp "/tmp/kws/$MODEL_DIR/encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx" app/src/main/assets/wakeword/
           cp "/tmp/kws/$MODEL_DIR/decoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx" app/src/main/assets/wakeword/
