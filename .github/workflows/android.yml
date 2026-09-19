@@ -28,6 +28,38 @@ jobs:
             https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar
           echo "633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96  app/libs/sherpa-onnx-1.13.8.aar" | sha256sum -c -
 
+      - name: Prepare offline English wake-word model
+        shell: bash
+        run: |
+          set -euo pipefail
+          MODEL_DIR="sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+          MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/$MODEL_DIR.tar.bz2"
+
+          mkdir -p /tmp/kws app/src/main/assets/wakeword
+          curl -fL --retry 4 --retry-delay 2 -o /tmp/kws/model.tar.bz2 "$MODEL_URL"
+          tar -xjf /tmp/kws/model.tar.bz2 -C /tmp/kws
+
+          python3 -m pip install --disable-pip-version-check --no-cache-dir sentencepiece
+          git clone --depth 1 --branch v1.13.8 https://github.com/k2-fsa/sherpa-onnx.git /tmp/sherpa-onnx
+
+          printf 'HELLO ASSISTANT\n' > /tmp/kws/keywords_raw.txt
+          python3 /tmp/sherpa-onnx/scripts/text2token.py \
+            --tokens "/tmp/kws/$MODEL_DIR/tokens.txt" \
+            --tokens-type bpe \
+            --bpe-model "/tmp/kws/$MODEL_DIR/bpe.model" \
+            /tmp/kws/keywords_raw.txt /tmp/kws/keywords.txt
+
+          cp "/tmp/kws/$MODEL_DIR/encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx" app/src/main/assets/wakeword/
+          cp "/tmp/kws/$MODEL_DIR/decoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx" app/src/main/assets/wakeword/
+          cp "/tmp/kws/$MODEL_DIR/joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx" app/src/main/assets/wakeword/
+          cp "/tmp/kws/$MODEL_DIR/tokens.txt" app/src/main/assets/wakeword/
+          cp /tmp/kws/keywords.txt app/src/main/assets/wakeword/
+
+          echo "Wake-word assets:"
+          ls -lh app/src/main/assets/wakeword
+          echo "Generated keyword tokens:"
+          cat app/src/main/assets/wakeword/keywords.txt
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
