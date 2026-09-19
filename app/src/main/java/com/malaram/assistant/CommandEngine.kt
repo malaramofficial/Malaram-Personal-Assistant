@@ -53,6 +53,9 @@ object CommandEngine {
             text.contains("सेटिंग") || text.contains("settings") ->
                 openSettings(context)
 
+            text.contains("रिप्लाई क्या आया") || text.contains("रिप्लाई बताओ") || text.contains("जवाब क्या आया") || text.contains("मैसेज क्या आया") ->
+                NotificationReplyStore.describeLatest()
+
             text.contains("गूगल") || text.contains("google") || text.startsWith("सर्च") ->
                 searchGoogle(context, raw)
 
