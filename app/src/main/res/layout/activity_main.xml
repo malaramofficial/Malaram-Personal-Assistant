@@ -47,7 +47,14 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="🎙️ Hello Assistant चालू करें"/>
+            android:text="🎙️ Hands-free Assistant चालू करें"/>
+
+        <Button
+            android:id="@+id/aiSettingsButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="🧠 AI Brain सेट करें"/>
 
         <Button
             android:id="@+id/testVoiceButton"
