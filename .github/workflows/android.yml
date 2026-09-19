@@ -43,7 +43,7 @@ jobs:
           git clone --depth 1 --branch v1.13.8 https://github.com/k2-fsa/sherpa-onnx.git /tmp/sherpa-onnx
 
           printf 'HELLO ASSISTANT\n' > /tmp/kws/keywords_raw.txt
-          python3 /tmp/sherpa-onnx/scripts/text2token.py \
+          PYTHONPATH=/tmp/sherpa-onnx/sherpa-onnx/python python3 /tmp/sherpa-onnx/scripts/text2token.py \
             --tokens "/tmp/kws/$MODEL_DIR/tokens.txt" \
             --tokens-type bpe \
             --bpe-model "/tmp/kws/$MODEL_DIR/bpe.model" \
