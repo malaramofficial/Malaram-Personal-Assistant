@@ -3,6 +3,7 @@ package com.malaram.assistant
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
+import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
@@ -23,15 +24,34 @@ class AssistantAccessibilityService : AccessibilityService() {
 
         fun clickText(text: String): Boolean {
             val node = findText(text) ?: return false
-            return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            return clickNodeOrParent(node)
         }
 
-        fun setText(text: String): Boolean {
+        fun setFocusedText(text: String): Boolean {
             val root = instance?.rootInActiveWindow ?: return false
-            val nodes = root.findAccessibilityNodeInfosByText(text)
-            return nodes.firstOrNull()?.performAction(
-                AccessibilityNodeInfo.ACTION_SET_TEXT
-            ) == true
+            val field = findEditable(root) ?: return false
+            val args = Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+            }
+            return field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        }
+
+        private fun findEditable(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+            if (node.isEditable && node.isEnabled) return node
+            for (i in 0 until node.childCount) {
+                val child = node.getChild(i) ?: continue
+                val found = findEditable(child)
+                if (found != null) return found
+            }
+            return null
+        }
+
+        private fun clickNodeOrParent(node: AccessibilityNodeInfo): Boolean {
+            if (node.isClickable && node.isEnabled) {
+                return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            }
+            val parent = node.parent ?: return false
+            return clickNodeOrParent(parent)
         }
     }
 
