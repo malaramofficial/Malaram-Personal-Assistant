@@ -83,7 +83,7 @@ class WakeWordService : Service() {
     private fun initKws() {
         try {
             val config = KeywordSpotterConfig(
-                featConfig = FeatureConfig(samplingRate = SAMPLE_RATE, featureDim = 80),
+                featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = 80),
                 modelConfig = OnlineModelConfig(
                     transducer = OnlineTransducerModelConfig(
                         encoder = ENCODER_FILE,
