@@ -50,6 +50,13 @@
             android:text="🔊 महिला आवाज टेस्ट करें"/>
 
         <Button
+            android:id="@+id/notificationButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="🔔 चैट रिप्लाई पढ़ने की अनुमति दें"/>
+
+        <Button
             android:id="@+id/accessibilityButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
