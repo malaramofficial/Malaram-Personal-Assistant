@@ -7,10 +7,10 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
 import android.speech.RecognizerIntent
-import android.widget.Button
-import android.widget.TextView
 import android.text.InputType
+import android.widget.Button
 import android.widget.EditText
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var femaleTts: HindiFemaleTts
+    private lateinit var speaker: AssistantSpeaker
     private lateinit var history: CommandHistory
     private lateinit var wakeWordButton: Button
     private var ttsReady = false
@@ -31,9 +32,9 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
         status = findViewById(R.id.status)
         femaleTts = HindiFemaleTts(this)
+        speaker = AssistantSpeaker(this)
         history = CommandHistory(this)
         wakeWordButton = findViewById(R.id.wakeWordButton)
 
@@ -48,81 +49,57 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.notificationButton).setOnClickListener {
             startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
         }
+        findViewById<Button>(R.id.voiceAssistantButton).setOnClickListener {
+            try { startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) }
+            catch (_: Exception) { Toast.makeText(this, "Voice Assistant settings उपलब्ध नहीं हैं।", Toast.LENGTH_SHORT).show() }
+        }
         wakeWordButton.setOnClickListener { toggleWakeWord() }
-
         NotificationReplyStore.restore(this)
 
-        if (android.os.Build.VERSION.SDK_INT >= 33) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 10)
-        }
+        if (android.os.Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 10)
 
         status.text = "महिला हिंदी आवाज तैयार की जा रही है…"
         femaleTts.prepare(
-            onStatus = { message -> status.text = message },
-            onReady = { ready ->
-                ttsReady = ready
-                if (ready) {
-                    speak("नमस्ते माला राम जी, मैं आपकी पर्सनल असिस्टेंट हूँ।")
-                }
+            onStatus = { status.text = it },
+            onReady = {
+                ttsReady = it
+                if (it) speak("नमस्ते माला राम जी, मैं आपकी पर्सनल असिस्टेंट हूँ।")
             }
         )
-
         updateWakeWordButton()
     }
 
     override fun onResume() {
         super.onResume()
-        if (isWakeWordEnabled() &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
-            PackageManager.PERMISSION_GRANTED
-        ) {
+        if (isWakeWordEnabled() && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             startWakeWordService()
         }
     }
 
     private fun toggleWakeWord() {
         if (isWakeWordEnabled()) {
-            stopService(Intent(this, WakeWordService::class.java).apply {
-                action = WakeWordService.ACTION_STOP
-            })
-            getSharedPreferences(PREFS, MODE_PRIVATE)
-                .edit()
-                .putBoolean(WAKE_ENABLED, false)
-                .apply()
-            status.text = "Wake word बंद है।"
+            stopService(Intent(this, WakeWordService::class.java).apply { action = WakeWordService.ACTION_STOP })
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(WAKE_ENABLED, false).apply()
+            status.text = "Hello Assistant बंद है।"
             updateWakeWordButton()
             return
         }
-
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO)
             status.text = "पहले Microphone permission दें।"
             return
         }
-
-        try {
-            startWakeWordService()
-            getSharedPreferences(PREFS, MODE_PRIVATE)
-                .edit()
-                .putBoolean(WAKE_ENABLED, true)
-                .apply()
-            status.text = "“Hello Assistant” wake word चालू है।"
-            updateWakeWordButton()
-        } catch (e: Exception) {
-            status.text = "Wake word शुरू नहीं हो सका: " + (e.message ?: "अज्ञात त्रुटि")
-        }
+        startWakeWordService()
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(WAKE_ENABLED, true).apply()
+        status.text = "Hello Assistant wake word चालू है।"
+        updateWakeWordButton()
     }
 
     private fun startWakeWordService() {
         try {
-            ContextCompat.startForegroundService(
-                this,
-                Intent(this, WakeWordService::class.java).apply {
-                    action = WakeWordService.ACTION_START
-                }
-            )
+            ContextCompat.startForegroundService(this, Intent(this, WakeWordService::class.java).apply {
+                action = WakeWordService.ACTION_START
+            })
         } catch (e: Exception) {
             status.text = "Hands-free mode शुरू नहीं हुआ: " + (e.message ?: "अज्ञात त्रुटि")
         }
@@ -133,95 +110,69 @@ class MainActivity : Activity() {
             hint = "Gemini API key"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setSingleLine(true)
-            setText(
-                getSharedPreferences("assistant_ai", MODE_PRIVATE)
-                    .getString("gemini_api_key", "")
-            )
+            setText(getSharedPreferences("assistant_ai", MODE_PRIVATE).getString("gemini_api_key", ""))
         }
-
         AlertDialog.Builder(this)
             .setTitle("🧠 Assistant AI Brain")
-            .setMessage("Gemini API key डालने के बाद Assistant सामान्य सवालों का AI जवाब देगा।")
+            .setMessage("API key डालने पर सामान्य सवालों के लिए AI Brain जवाब देगा। संवेदनशील phone actions अलग safety layer से गुजरेंगे।")
             .setView(input)
             .setPositiveButton("सेव करें") { _, _ ->
                 val key = input.text.toString().trim()
-                if (key.isBlank()) {
-                    AiBrain.clearApiKey(this)
-                    Toast.makeText(this, "AI key हटा दी गई।", Toast.LENGTH_SHORT).show()
-                } else {
-                    AiBrain.setApiKey(this, key)
-                    Toast.makeText(this, "AI Brain तैयार है।", Toast.LENGTH_SHORT).show()
-                }
+                if (key.isBlank()) { AiBrain.clearApiKey(this); Toast.makeText(this, "AI key हटा दी गई।", Toast.LENGTH_SHORT).show() }
+                else { AiBrain.setApiKey(this, key); Toast.makeText(this, "AI Brain तैयार है।", Toast.LENGTH_SHORT).show() }
             }
-            .setNegativeButton("रद्द", null)
-            .show()
+            .setNegativeButton("रद्द", null).show()
     }
 
-    private fun isWakeWordEnabled(): Boolean =
-        getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(WAKE_ENABLED, false)
+    private fun isWakeWordEnabled() = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(WAKE_ENABLED, false)
 
     private fun updateWakeWordButton() {
-        wakeWordButton.text = if (isWakeWordEnabled()) {
-            "🟢 Hello Assistant बंद करें"
-        } else {
-            "🎙️ Hello Assistant चालू करें"
-        }
+        wakeWordButton.text = if (isWakeWordEnabled()) "🟢 Hello Assistant बंद करें" else "🎙️ Hello Assistant चालू करें"
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
-    ) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_RECORD_AUDIO &&
-            grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
-        ) {
-            toggleWakeWord()
-        }
+        if (requestCode == REQUEST_RECORD_AUDIO && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) toggleWakeWord()
     }
 
     private fun listen() {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "hi-IN")
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "माला राम जी, आदेश बोलिए")
-        }
         try {
-            startActivityForResult(intent, 100)
-        } catch (_: Exception) {
-            speak("आवाज़ पहचान सेवा उपलब्ध नहीं है।")
-        }
+            startActivityForResult(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "hi-IN")
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "माला राम जी, आदेश बोलिए")
+            }, 100)
+        } catch (_: Exception) { speak("आवाज़ पहचान सेवा उपलब्ध नहीं है।") }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != 100 || resultCode != RESULT_OK) return
+        val heard = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim() ?: return
+        handleHeard(heard)
+    }
 
-        val heard = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            ?.firstOrNull() ?: return
-
+    private fun handleHeard(heard: String) {
         status.text = "सुना: $heard"
-        val response = CommandEngine.execute(this, heard)
-        history.add(heard, response)
-        if (response.startsWith("मैंने सुना:")) {
+        val result = CommandEngine.executeResult(this, heard)
+        history.add(heard, result.text)
+        if (result.needsAi) {
             status.text = "AI सोच रहा है…"
             AiBrain.ask(this, heard) { answer ->
                 history.add(heard, answer)
                 speak(answer)
             }
-        } else {
-            speak(response)
-        }
+        } else speak(result.text)
     }
 
     private fun speak(message: String) {
         status.text = message
-        if (ttsReady) femaleTts.speak(message)
+        if (ttsReady) femaleTts.speak(message) else speaker.speak(message)
     }
 
     override fun onDestroy() {
         femaleTts.shutdown()
+        speaker.shutdown()
         super.onDestroy()
     }
 }
