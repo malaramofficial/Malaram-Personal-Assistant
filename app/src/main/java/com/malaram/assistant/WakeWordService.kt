@@ -51,57 +51,44 @@ class WakeWordService : Service() {
     private var waitingCommand = false
     private var speechRecognizer: SpeechRecognizer? = null
     private lateinit var tts: HindiFemaleTts
+    private lateinit var fallbackSpeaker: AssistantSpeaker
     private var ttsReady = false
 
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        ServiceCompat.startForeground(
-            this, NOTIFICATION_ID, notification("Wake word service शुरू हो रहा है…"),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-        )
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification("Assistant शुरू हो रहा है…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         tts = HindiFemaleTts(this)
+        fallbackSpeaker = AssistantSpeaker(this)
         tts.prepare(
             onStatus = { updateNotification(it) },
-            onReady = {
-                ttsReady = it
-                updateNotification(if (it) "“Hello Assistant” सुन रहा हूँ।" else "महिला आवाज तैयार नहीं हुई।")
+            onReady = { ready ->
+                ttsReady = ready
+                updateNotification(if (ready) "“Hello Assistant” सुन रहा हूँ।" else "Fallback आवाज तैयार है।")
             }
         )
         initKws()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopSelf()
-            return START_NOT_STICKY
-        }
+        if (intent?.action == ACTION_STOP) { stopSelf(); return START_NOT_STICKY }
         startWakeListening()
         return START_STICKY
     }
 
     private fun initKws() {
         try {
-            val config = KeywordSpotterConfig(
-                featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = 80),
-                modelConfig = OnlineModelConfig(
-                    transducer = OnlineTransducerModelConfig(
-                        encoder = ENCODER_FILE,
-                        decoder = DECODER_FILE,
-                        joiner = JOINER_FILE
+            kws = KeywordSpotter(
+                assetManager = assets,
+                config = KeywordSpotterConfig(
+                    featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = 80),
+                    modelConfig = OnlineModelConfig(
+                        transducer = OnlineTransducerModelConfig(encoder = ENCODER_FILE, decoder = DECODER_FILE, joiner = JOINER_FILE),
+                        tokens = TOKENS_FILE, numThreads = 1, debug = false, provider = "cpu", modelType = "zipformer"
                     ),
-                    tokens = TOKENS_FILE,
-                    numThreads = 1,
-                    debug = false,
-                    provider = "cpu",
-                    modelType = "zipformer"
-                ),
-                keywordsFile = KEYWORD_FILE,
-                keywordsScore = 1.0f,
-                keywordsThreshold = 0.25f,
-                numTrailingBlanks = 1
+                    keywordsFile = KEYWORD_FILE, keywordsScore = 1.0f, keywordsThreshold = 0.25f, numTrailingBlanks = 1
+                )
             )
-            kws = KeywordSpotter(assetManager = assets, config = config)
         } catch (e: Exception) {
             Log.e("MalaramWakeWord", "KWS init failed", e)
             updateNotification("Wake word मॉडल लोड नहीं हुआ।")
@@ -111,50 +98,29 @@ class WakeWordService : Service() {
     private fun startWakeListening() {
         if (wakeListening || waitingCommand) return
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            updateNotification("Microphone permission जरूरी है।")
-            return
+            updateNotification("Microphone permission जरूरी है।"); return
         }
         val spotter = kws ?: return
-
         try {
-            val min = AudioRecord.getMinBufferSize(
-                SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
-            )
+            val min = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
             if (min <= 0) return
-
-            recorder = AudioRecord(
-                MediaRecorder.AudioSource.MIC, SAMPLE_RATE,
-                AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, min * 2
-            )
-            if (recorder?.state != AudioRecord.STATE_INITIALIZED) {
-                cleanupAudio()
-                updateNotification("Microphone शुरू नहीं हो सका।")
-                return
-            }
-
+            recorder = AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, min * 2)
+            if (recorder?.state != AudioRecord.STATE_INITIALIZED) { cleanupAudio(); updateNotification("Microphone शुरू नहीं हो सका।"); return }
             stream?.release()
             stream = spotter.createStream()
             recorder?.startRecording()
             wakeListening = true
-            updateNotification("“Hello Assistant” के लिए standby में हूँ।")
-
+            updateNotification("“Hello Assistant” standby में है।")
             recordingThread = Thread {
                 val localStream = stream ?: return@Thread
                 val buffer = ShortArray(SAMPLE_RATE / 10)
-
                 while (wakeListening && !waitingCommand) {
                     val r = recorder?.read(buffer, 0, buffer.size) ?: break
                     if (r <= 0) continue
-
-                    localStream.acceptWaveform(
-                        FloatArray(r) { buffer[it] / 32768.0f },
-                        SAMPLE_RATE
-                    )
-
+                    localStream.acceptWaveform(FloatArray(r) { buffer[it] / 32768.0f }, SAMPLE_RATE)
                     while (spotter.isReady(localStream) && wakeListening && !waitingCommand) {
                         spotter.decode(localStream)
-                        val keyword = spotter.getResult(localStream).keyword
-                        if (keyword.isNotBlank()) {
+                        if (spotter.getResult(localStream).keyword.isNotBlank()) {
                             spotter.reset(localStream)
                             onWakeWord()
                             return@Thread
@@ -174,23 +140,16 @@ class WakeWordService : Service() {
         waitingCommand = true
         cleanupAudio()
         updateNotification("जाग गया। आदेश सुन रहा हूँ…")
-        // Wake acknowledgement is intentionally silent to avoid feeding our own voice back into the mic.
-        handler.postDelayed({ startCommandRecognition() }, 900L)
+        handler.postDelayed({ startCommandRecognition() }, 700L)
     }
 
     private fun startCommandRecognition() {
         if (!waitingCommand) return
-
         try {
             speechRecognizer?.destroy()
-            speechRecognizer = if (
-                Build.VERSION.SDK_INT >= 31 &&
-                SpeechRecognizer.isOnDeviceRecognitionAvailable(this)
-            ) {
+            speechRecognizer = if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(this))
                 SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
-            } else {
-                SpeechRecognizer.createSpeechRecognizer(this)
-            }
+            else SpeechRecognizer.createSpeechRecognizer(this)
 
             speechRecognizer?.setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params: Bundle?) { updateNotification("आदेश सुन रहा हूँ…") }
@@ -200,16 +159,12 @@ class WakeWordService : Service() {
                 override fun onEndOfSpeech() { updateNotification("आदेश समझ रहा हूँ…") }
                 override fun onError(error: Int) { finishCommand("आवाज़ साफ़ नहीं मिली।") }
                 override fun onResults(results: Bundle?) {
-                    val heard = results
-                        ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull()?.trim()
-                    if (heard.isNullOrBlank()) finishCommand("मैं आदेश समझ नहीं पाया।")
-                    else executeCommand(heard)
+                    val heard = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim()
+                    if (heard.isNullOrBlank()) finishCommand("मैं आदेश समझ नहीं पाया।") else executeCommand(heard)
                 }
                 override fun onPartialResults(partialResults: Bundle?) = Unit
                 override fun onEvent(eventType: Int, params: Bundle?) = Unit
             })
-
             speechRecognizer?.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "hi-IN")
@@ -223,24 +178,27 @@ class WakeWordService : Service() {
     }
 
     private fun executeCommand(heard: String) {
-        val response = try {
-            CommandEngine.execute(this, heard)
-        } catch (e: Exception) {
-            Log.e("MalaramWakeWord", "Command failed", e)
-            "इस आदेश को पूरा करते समय त्रुटि हुई।"
-        }
-        CommandHistory(this).add(heard, response)
-        finishCommand(response)
+        val result = try { CommandEngine.executeResult(this, heard) }
+        catch (e: Exception) { Log.e("MalaramWakeWord", "Command failed", e); CommandEngine.Result("इस आदेश को पूरा करते समय त्रुटि हुई।") }
+        CommandHistory(this).add(heard, result.text)
+        if (result.needsAi) {
+            updateNotification("AI सोच रहा है…")
+            AiBrain.ask(this, heard) { answer ->
+                CommandHistory(this).add(heard, answer)
+                finishCommand(answer)
+            }
+        } else finishCommand(result.text)
     }
 
     private fun finishCommand(response: String) {
         speechRecognizer?.destroy()
         speechRecognizer = null
-        if (response.isNotBlank() && ttsReady) tts.speak(response)
-
+        if (response.isNotBlank()) {
+            if (ttsReady) tts.speak(response) else fallbackSpeaker.speak(response)
+        }
         waitingCommand = false
-        updateNotification("“Hello Assistant” के लिए standby में हूँ।")
-        handler.postDelayed({ if (!waitingCommand) startWakeListening() }, 1400L)
+        updateNotification("“Hello Assistant” standby में है।")
+        handler.postDelayed({ if (!waitingCommand) startWakeListening() }, 1800L)
     }
 
     private fun cleanupAudio() {
@@ -253,27 +211,18 @@ class WakeWordService : Service() {
     }
 
     private fun notification(text: String): Notification =
-        Notification.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("Malaram Personal Assistant")
-            .setContentText(text)
-            .setOngoing(true)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .build()
+        Notification.Builder(this, CHANNEL_ID).setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle("Malaram Personal Assistant").setContentText(text).setOngoing(true)
+            .setCategory(Notification.CATEGORY_SERVICE).build()
 
     private fun updateNotification(text: String) {
-        getSystemService(NotificationManager::class.java)
-            ?.notify(NOTIFICATION_ID, notification(text))
+        getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, notification(text))
     }
 
     private fun createChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            getSystemService(NotificationManager::class.java)?.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_ID, "Assistant Wake Word", NotificationManager.IMPORTANCE_LOW
-                )
-            )
-        }
+        if (Build.VERSION.SDK_INT >= 26) getSystemService(NotificationManager::class.java)?.createNotificationChannel(
+            NotificationChannel(CHANNEL_ID, "Assistant Wake Word", NotificationManager.IMPORTANCE_LOW)
+        )
     }
 
     override fun onDestroy() {
@@ -286,6 +235,7 @@ class WakeWordService : Service() {
         try { kws?.release() } catch (_: Exception) {}
         kws = null
         tts.shutdown()
+        fallbackSpeaker.shutdown()
         super.onDestroy()
     }
 
