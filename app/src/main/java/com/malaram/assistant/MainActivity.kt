@@ -3,17 +3,26 @@ package com.malaram.assistant
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.widget.Button
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var femaleTts: HindiFemaleTts
     private lateinit var history: CommandHistory
+    private lateinit var wakeWordButton: Button
     private var ttsReady = false
+
+    companion object {
+        private const val REQUEST_RECORD_AUDIO = 21
+        private const val PREFS = "assistant_settings"
+        private const val WAKE_ENABLED = "wake_word_enabled"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -22,6 +31,7 @@ class MainActivity : Activity() {
         status = findViewById(R.id.status)
         femaleTts = HindiFemaleTts(this)
         history = CommandHistory(this)
+        wakeWordButton = findViewById(R.id.wakeWordButton)
 
         findViewById<Button>(R.id.listenButton).setOnClickListener { listen() }
         findViewById<Button>(R.id.testVoiceButton).setOnClickListener {
@@ -33,6 +43,8 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.notificationButton).setOnClickListener {
             startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
         }
+        wakeWordButton.setOnClickListener { toggleWakeWord() }
+
         NotificationReplyStore.restore(this)
 
         if (android.os.Build.VERSION.SDK_INT >= 33) {
@@ -49,6 +61,72 @@ class MainActivity : Activity() {
                 }
             }
         )
+
+        updateWakeWordButton()
+    }
+
+    private fun toggleWakeWord() {
+        if (isWakeWordEnabled()) {
+            stopService(Intent(this, WakeWordService::class.java).apply {
+                action = WakeWordService.ACTION_STOP
+            })
+            getSharedPreferences(PREFS, MODE_PRIVATE)
+                .edit()
+                .putBoolean(WAKE_ENABLED, false)
+                .apply()
+            status.text = "Wake word बंद है।"
+            updateWakeWordButton()
+            return
+        }
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO)
+            status.text = "पहले Microphone permission दें।"
+            return
+        }
+
+        try {
+            ContextCompat.startForegroundService(
+                this,
+                Intent(this, WakeWordService::class.java).apply {
+                    action = WakeWordService.ACTION_START
+                }
+            )
+            getSharedPreferences(PREFS, MODE_PRIVATE)
+                .edit()
+                .putBoolean(WAKE_ENABLED, true)
+                .apply()
+            status.text = "“Hello Assistant” wake word चालू है।"
+            updateWakeWordButton()
+        } catch (e: Exception) {
+            status.text = "Wake word शुरू नहीं हो सका: " + (e.message ?: "अज्ञात त्रुटि")
+        }
+    }
+
+    private fun isWakeWordEnabled(): Boolean =
+        getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(WAKE_ENABLED, false)
+
+    private fun updateWakeWordButton() {
+        wakeWordButton.text = if (isWakeWordEnabled()) {
+            "🟢 Hello Assistant बंद करें"
+        } else {
+            "🎙️ Hello Assistant चालू करें"
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_RECORD_AUDIO &&
+            grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+        ) {
+            toggleWakeWord()
+        }
     }
 
     private fun listen() {
