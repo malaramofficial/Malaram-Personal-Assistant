@@ -56,6 +56,13 @@ object CommandEngine {
             text.contains("रिप्लाई क्या आया") || text.contains("रिप्लाई बताओ") || text.contains("जवाब क्या आया") || text.contains("मैसेज क्या आया") ->
                 NotificationReplyStore.describeLatest()
 
+            text.startsWith("जवाब लिखो ") || text.startsWith("reply लिखो ") -> {
+                val draft = raw.substringAfter(" ").trim()
+                if (draft.isBlank()) "क्या जवाब लिखना है?"
+                else if (AssistantAccessibilityService.setFocusedText(draft)) "जवाब लिख दिया है। भेजने से पहले आपकी पुष्टि जरूरी है।"
+                else "चैट का लिखने वाला बॉक्स नहीं मिला।" 
+            }
+
             text.contains("गूगल") || text.contains("google") || text.startsWith("सर्च") ->
                 searchGoogle(context, raw)
 
