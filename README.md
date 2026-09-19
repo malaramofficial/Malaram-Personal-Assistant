@@ -16,7 +16,11 @@
 - Sensitive-action guard for payment, OTP, password, deletion, purchase
 - GitHub Actions automatic debug APK build
 
-## 50-task upgrade
+## 50-task upgrade — implementation status
+
+The current branch now includes the core foundation for the 50-task roadmap: hands-free wake-word service, system VoiceInteractionService integration, structured local action planning, safety confirmation state, screen reading, coordinate-independent gestures, long press, text input, Enter/submit, AI routing, and reliable voice fallback. The remaining items that require a real device/model are explicitly not claimed as production-complete: a fully offline LLM planner, fully offline ASR, arbitrary multi-step agent execution, and release signing/device validation.
+
+## 50-task roadmap
 
 1. Hindi greeting
 2. Hindi TTS
