@@ -7,9 +7,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
 
     <queries>
-        <intent>
-            <action android:name="android.speech.RecognitionService"/>
-        </intent>
+        <intent><action android:name="android.speech.RecognitionService"/></intent>
     </queries>
 
     <application
@@ -32,6 +30,20 @@
             android:label="Malaram Assistant Wake Word"/>
 
         <service
+            android:name=".MalaramVoiceInteractionService"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true"
+            android:label="Malaram Assistant Voice"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.voice_interaction_service"
+                android:resource="@xml/voice_interaction_service"/>
+        </service>
+
+        <service
             android:name=".AssistantAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="false"
@@ -39,9 +51,7 @@
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService"/>
             </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config"/>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service_config"/>
         </service>
 
         <service
