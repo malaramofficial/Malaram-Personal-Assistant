@@ -269,7 +269,8 @@ object AiBrain {
                         "Allowed: open_app, click, type, enter, back, swipe_up, swipe_down, wait, done, answer. " +
                         "हर action के बाद नई स्क्रीन देखकर ही अगला निर्णय लो। बिना evidence के done मत दो; ऐप खुलना अकेले सफलता नहीं है।"
                     val raw = provider(context).complete(context, SYSTEM_PROMPT, prompt, 90)
-                    val parsed = parseAgentAction(raw) ?: run {
+                    val parsed = parseAgentAction(raw)
+                    if (parsed == null) {
                         finalText = "Agent ने वैध action नहीं दिया।"
                         break
                     }
