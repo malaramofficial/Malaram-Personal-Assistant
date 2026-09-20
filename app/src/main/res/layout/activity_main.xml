@@ -47,21 +47,28 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="🎙️ Hands-free Assistant चालू करें"/>
+            android:text="🎙️ Hello Assistant चालू करें"/>
 
         <Button
             android:id="@+id/voiceAssistantButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="🗣️ System Assistant / Voice settings"/>
+            android:text="🗣️ SYSTEM ASSISTANT / VOICE SETTINGS"/>
+
+        <Button
+            android:id="@+id/localAiButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="🤖 LOCAL AI MODEL डाउनलोड करें • 1.28 GB"/>
 
         <Button
             android:id="@+id/aiSettingsButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="🧠 AI Brain सेट करें"/>
+            android:text="🧠 AI BRAIN / LOCAL AI सेट करें"/>
 
         <Button
             android:id="@+id/testVoiceButton"
@@ -82,14 +89,22 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="♿ Accessibility चालू करें"/>
+            android:text="♿ ACCESSIBILITY चालू करें"/>
 
         <TextView
             android:id="@+id/help"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
-            android:text="उदाहरण:\n• “Hello Assistant” → फिर आदेश बोलें\n• YouTube खोलो\n• WhatsApp खोलो\n• Google पर राजस्थान मौसम खोजो\n• वापस जाओ\n• होम पर जाओ\n• ऊपर स्क्रोल करो\n• नीचे स्क्रोल करो"
+            android:text="उदाहरण:
+• “Hello Assistant” → फिर आदेश बोलें
+• YouTube खोलो
+• WhatsApp खोलो
+• Google पर राजस्थान मौसम खोजो
+• वापस जाओ
+• होम पर जाओ
+• ऊपर स्क्रोल करो
+• नीचे स्क्रोल करो"
             android:textSize="16sp"/>
     </LinearLayout>
 </ScrollView>
