@@ -43,7 +43,8 @@ class AssistantAccessibilityService : AccessibilityService() {
         fun setFocusedText(text: String, target: String? = null): Boolean {
             val root = instance?.rootInActiveWindow ?: return false
             val field = if (!target.isNullOrBlank()) findEditableNear(root, target) else findFocusedEditable(root)
-            val chosen = field ?: findEditable(root) ?: return false
+            val chosen = if (!target.isNullOrBlank()) field else (field ?: findEditable(root))
+            if (chosen == null) return false
             val args = Bundle().apply {
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
             }
@@ -119,14 +120,16 @@ class AssistantAccessibilityService : AccessibilityService() {
             val wanted = target.lowercase()
             val candidates = mutableListOf<AccessibilityNodeInfo>()
             collectEditables(node, candidates)
-            return candidates.minByOrNull { distanceToText(it, wanted) }
+            return candidates.map { it to distanceToText(it, wanted) }
+                .filter { it.second == 0 }
+                .minByOrNull { it.second }?.first
         }
 
         private fun distanceToText(field: AccessibilityNodeInfo, wanted: String): Int {
-            val hint = (field.hintText?.toString() ?: "") .lowercase()
+            val hint = (field.hintText?.toString() ?: "").lowercase()
             val desc = (field.contentDescription?.toString() ?: "").lowercase()
-            val label = "$hint $desc"
-            return if (label.contains(wanted)) 0 else 1
+            val text = (field.text?.toString() ?: "").lowercase()
+            return if ("$hint $desc $text".contains(wanted)) 0 else 1
         }
 
         private fun collectEditables(node: AccessibilityNodeInfo, out: MutableList<AccessibilityNodeInfo>) {
