@@ -42,7 +42,7 @@ class WakeWordService : Service() {
         private const val JOINER_FILE = "wakeword/joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
         // Diagnostic stage 1: prove the foreground microphone service itself is stable
         // before touching AudioRecord or Sherpa native KWS.
-        private const val DIAGNOSTIC_STAGE = 2
+        private const val DIAGNOSTIC_STAGE = 1
     }
 
     private val handler = Handler(Looper.getMainLooper())
