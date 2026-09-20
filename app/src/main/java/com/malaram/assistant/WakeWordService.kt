@@ -222,7 +222,7 @@ class WakeWordService : Service() {
         when {
             result.needsAgent -> {
                 updateNotification("AI agent स्क्रीन समझ रहा है…")
-                AiBrain.runAgent(this, heard) { answer ->
+                AiBrain.runAgent(this, result.agentTask ?: heard) { answer ->
                     CommandHistory(this).add(heard, answer)
                     finishCommand(answer)
                 }
