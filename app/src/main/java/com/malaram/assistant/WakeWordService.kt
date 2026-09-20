@@ -40,9 +40,9 @@ class WakeWordService : Service() {
         private const val ENCODER_FILE = "wakeword/encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
         private const val DECODER_FILE = "wakeword/decoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
         private const val JOINER_FILE = "wakeword/joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
-        // Diagnostic stage 1: prove the foreground microphone service itself is stable
-        // before touching AudioRecord or Sherpa native KWS.
-        private const val DIAGNOSTIC_STAGE = 1
+        // Diagnostic stage 2: prove Sherpa native KWS model initialization separately.
+        // Do NOT start AudioRecord yet. This isolates model/native initialization first.
+        private const val DIAGNOSTIC_STAGE = 2
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -62,7 +62,7 @@ class WakeWordService : Service() {
         createChannel()
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification("Assistant शुरू हो रहा है…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         if (DIAGNOSTIC_STAGE == 1) {
-            updateNotification("DIAGNOSTIC 1: microphone service stable-test")
+            updateNotification("DIAGNOSTIC 2: loading Sherpa KWS; microphone not started")
             return
         }
 
@@ -80,8 +80,8 @@ class WakeWordService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { stopSelf(); return START_NOT_STICKY }
-        if (DIAGNOSTIC_STAGE == 1) {
-            updateNotification("DIAGNOSTIC 1 PASS: service alive; KWS not started")
+        if (DIAGNOSTIC_STAGE == 2) {
+            updateNotification(if (kws != null) "DIAGNOSTIC 2 PASS: Sherpa KWS loaded; microphone not started" else "DIAGNOSTIC 2 FAIL: Sherpa KWS did not load")
             return START_NOT_STICKY
         }
         startWakeListening()
@@ -101,9 +101,10 @@ class WakeWordService : Service() {
                     keywordsFile = KEYWORD_FILE, keywordsScore = 1.0f, keywordsThreshold = 0.25f, numTrailingBlanks = 1
                 )
             )
+            updateNotification("DIAGNOSTIC 2 PASS: Sherpa KWS loaded; microphone not started")
         } catch (e: Exception) {
             Log.e("MalaramWakeWord", "KWS init failed", e)
-            updateNotification("Wake word मॉडल लोड नहीं हुआ।")
+            updateNotification("DIAGNOSTIC 2 FAIL: Sherpa KWS model init failed")
         }
     }
 
@@ -254,7 +255,7 @@ class WakeWordService : Service() {
         cleanupAudio()
         try { kws?.release() } catch (_: Exception) {}
         kws = null
-        if (DIAGNOSTIC_STAGE != 1) {
+        if (DIAGNOSTIC_STAGE != 2) {
             tts.shutdown()
             fallbackSpeaker.shutdown()
         }
