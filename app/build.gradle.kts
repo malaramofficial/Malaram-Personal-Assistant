@@ -15,8 +15,8 @@ android {
         applicationId = "com.malaram.assistant"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.2.0"
+        versionCode = 5
+        versionName = "1.3.0"
     }
 
     compileOptions {
@@ -37,4 +37,6 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation(files("libs/sherpa-onnx-1.13.8.aar"))
     implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("dev.ffmpegkit-maintained:llama-android:0.1.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 }
