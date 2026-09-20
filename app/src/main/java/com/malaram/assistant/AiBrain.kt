@@ -54,6 +54,79 @@ object AiBrain {
         }
     }
 
+    fun runAgent(context: Context, task: String, callback: (String) -> Unit) {
+        val key = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_API, null)?.trim()
+
+        if (key.isNullOrBlank()) {
+            callback("Agent के लिए पहले AI Brain में Gemini API key जोड़ें।")
+            return
+        }
+
+        executor.execute {
+            val history = mutableListOf<String>()
+            var finalText = "मैं यह काम पूरा नहीं कर पाया."
+
+            try {
+                for (stepIndex in 0 until 8) {
+                    val screen = AssistantAccessibilityService.readScreen()
+                    val prompt = """
+                        उपयोगकर्ता का पूरा काम:
+                        ${task}
+
+                        अभी फोन की स्क्रीन Accessibility tree से:
+                        ${screen.ifBlank { "(स्क्रीन का टेक्स्ट उपलब्ध नहीं है)" }}
+
+                        अब तक के कदम:
+                        ${history.joinToString("\n").ifBlank { "(कोई कदम नहीं)" }}
+
+                        तुम फोन-agent हो। केवल अगला एक atomic action चुनो।
+                        JSON के अलावा कुछ मत लिखो।
+                        Schema:
+                        {"action":"open_app|click|type|enter|back|swipe_up|swipe_down|wait|done|answer","argument":"..."}
+                        नियम:
+                        - ऐप का नाम देखकर केवल ऐप खोलकर मत रुकना; उपयोगकर्ता का पूरा लक्ष्य पूरा करो।
+                        - स्क्रीन में दिख रहे text/content-description को click के argument में इस्तेमाल करो।
+                        - search के लिए click, फिर type, फिर enter जैसे छोटे कदम दो।
+                        - जब लक्ष्य वास्तव में पूरा हो जाए तो done दो।
+                        - यदि Accessibility service उपलब्ध नहीं है या स्क्रीन पढ़ी नहीं जा रही है तो answer में स्पष्ट कारण दो।
+                    """.trimIndent()
+
+                    val raw = request(key, prompt)
+                    val jsonText = raw.substringAfter("{", raw).substringBeforeLast("}", raw).trim()
+                    val obj = JSONObject(jsonText)
+                    val action = obj.optString("action").trim().lowercase()
+                    val argument = obj.optString("argument").trim()
+
+                    when (action) {
+                        "done" -> {
+                            finalText = if (argument.isNotBlank()) argument else "काम पूरा हो गया।"
+                            break
+                        }
+                        "answer" -> {
+                            finalText = argument.ifBlank { "मैं यह काम पूरा नहीं कर पाया।" }
+                            break
+                        }
+                        "wait" -> {
+                            Thread.sleep(900)
+                            history += "wait"
+                        }
+                        else -> {
+                            val result = CommandEngine.executeAgentAction(context, action, argument)
+                            history += "$action -> $result"
+                            Thread.sleep(900)
+                            finalText = result
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                finalText = "Agent रुक गया: " + (e.message ?: "अज्ञात त्रुटि")
+            }
+
+            Handler(Looper.getMainLooper()).post { callback(finalText) }
+        }
+    }
+
     private fun request(apiKey: String, userText: String): String {
         val connection = (URL(ENDPOINT).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
