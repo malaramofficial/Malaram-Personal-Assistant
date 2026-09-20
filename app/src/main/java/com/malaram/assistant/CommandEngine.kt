@@ -6,7 +6,7 @@ import android.net.Uri
 import android.provider.Settings
 
 object CommandEngine {
-    data class Result(val text: String, val needsAi: Boolean = false)
+    data class Result(val text: String, val needsAi: Boolean = false, val needsAgent: Boolean = false)
 
     fun executeResult(context: Context, raw: String): Result {
         val text = raw.trim().lowercase()
@@ -30,7 +30,7 @@ object CommandEngine {
         val plan = AgentPlanner.plan(raw)
         if (plan.isNotEmpty()) return Result(executePlan(plan))
 
-        return when {
+        if (isCompoundAppTask(text)) {\n            return Result("मैं पूरे काम को समझकर चरण-दर-चरण कर रहा हूँ।", needsAgent = true)\n        }\n\n        return when {
             text.contains("youtube") || text.contains("यूट्यूब") ->
                 Result(openAppOrUrl(context, "com.google.android.youtube", "https://www.youtube.com", "YouTube खोल रहा हूँ।"))
             text.contains("whatsapp") || text.contains("व्हाट्सऐप") || text.contains("व्हाट्सएप") ->
@@ -50,6 +50,44 @@ object CommandEngine {
                 Result("ठीक है, रुक गया।")
             else -> Result("मैंने सुना: $raw।", needsAi = true)
         }
+    }
+
+    private fun isCompoundAppTask(text: String): Boolean {
+        val hasApp = listOf("youtube", "यूट्यूब", "whatsapp", "व्हाट्सऐप", "व्हाट्सएप", "chrome", "ब्राउज़र", "ब्राउजर")
+            .any { text.contains(it) }
+        if (!hasApp) return false
+        val withoutApp = text
+            .replace("youtube", "").replace("यूट्यूब", "")
+            .replace("whatsapp", "").replace("व्हाट्सऐप", "").replace("व्हाट्सएप", "")
+            .replace("chrome", "").replace("ब्राउज़र", "").replace("ब्राउजर", "").trim()
+        val launchOnly = listOf("खोलो", "खोल", "खोल दो", "open", "start", "चालू")
+        return withoutApp.isNotBlank() && launchOnly.none { withoutApp == it }
+    }
+
+    fun executeAgentAction(context: Context, action: String, argument: String): String {
+        return when (action.lowercase()) {
+            "open_app" -> openNamedApp(context, argument)
+            "click" -> if (AssistantAccessibilityService.clickText(argument)) "क्लिक किया" else "लक्ष्य नहीं मिला"
+            "type" -> if (AssistantAccessibilityService.setFocusedText(argument)) "टेक्स्ट लिखा" else "टेक्स्ट बॉक्स नहीं मिला"
+            "enter" -> if (AssistantAccessibilityService.pressEnter()) "एंटर किया" else "एंटर उपलब्ध नहीं"
+            "back" -> if (AssistantAccessibilityService.goBack()) "वापस गया" else "Back उपलब्ध नहीं"
+            "swipe_up" -> if (AssistantAccessibilityService.instance?.swipeUp() == true) "ऊपर स्क्रोल किया" else "स्क्रोल नहीं हुआ"
+            "swipe_down" -> if (AssistantAccessibilityService.instance?.swipeDown() == true) "नीचे स्क्रोल किया" else "स्क्रोल नहीं हुआ"
+            else -> "अज्ञात action"
+        }
+    }
+
+    private fun openNamedApp(context: Context, name: String): String {
+        val n = name.trim().lowercase()
+        val packageName = when {
+            n.contains("youtube") || n.contains("यूट्यूब") -> "com.google.android.youtube"
+            n.contains("whatsapp") || n.contains("व्हाट्सऐप") || n.contains("व्हाट्सएप") -> "com.whatsapp"
+            n.contains("chrome") || n.contains("ब्राउज़र") || n.contains("ब्राउजर") -> "com.android.chrome"
+            else -> return "ऐप पहचान नहीं पाया"
+        }
+        val launch = context.packageManager.getLaunchIntentForPackage(packageName) ?: return "ऐप फोन में नहीं मिला"
+        context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        return "ऐप खोला"
     }
 
     fun execute(context: Context, raw: String): String = executeResult(context, raw).text
