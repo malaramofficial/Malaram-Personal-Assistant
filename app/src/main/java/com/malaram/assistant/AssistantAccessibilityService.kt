@@ -5,7 +5,7 @@ import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.graphics.Bitmap
 import android.hardware.HardwareBuffer
-import android.os.CountDownLatch
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import android.os.Build
 import android.os.Bundle
@@ -57,15 +57,16 @@ class AssistantAccessibilityService : AccessibilityService() {
             if (Build.VERSION.SDK_INT >= 30 &&
                 field.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
             ) return true
-            return field.performAction(AccessibilityNodeInfo.ACTION_IME_ACTION)
+            return clickText("भेजें") || clickText("भेजो") || clickText("Send") || clickText("Enter") || clickText("Submit") || clickText("ओके") || clickText("OK")
         }
 
-        fun screenshotHash(): String {\n            val service = instance ?: return ""\n            if (Build.VERSION.SDK_INT < 30) return ""\n            val latch = CountDownLatch(1)\n            var hash = ""\n            service.takeScreenshot(android.view.Display.DEFAULT_DISPLAY, service.mainExecutor, object : AccessibilityService.TakeScreenshotCallback {\n                override fun onSuccess(result: AccessibilityService.ScreenshotResult) {\n                    try {\n                        val bitmap = Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace)?.copy(Bitmap.Config.ARGB_8888, false)\n                        if (bitmap != null) {\n                            var h = 17L\n                            val stepX = maxOf(1, bitmap.width / 32)\n                            val stepY = maxOf(1, bitmap.height / 32)\n                            var y = 0\n                            while (y < bitmap.height) {\n                                var x = 0\n                                while (x < bitmap.width) {\n                                    h = h * 31 + bitmap.getPixel(x, y)\n                                    x += stepX\n                                }\n                                y += stepY\n                            }\n                            hash = h.toString(16)\n                            bitmap.recycle()\n                        }\n                    } catch (_: Exception) { }\n                    try { result.hardwareBuffer.close() } catch (_: Exception) { }\n                    latch.countDown()\n                }\n                override fun onFailure(errorCode: Int) { latch.countDown() }\n            })\n            latch.await(1500, TimeUnit.MILLISECONDS)\n            return hash\n        }\n\n        fun readScreen(): String {
+        fun screenshotHash(): String {
+            val service = instance ?: return ""
+            if (Build.VERSION.SDK_INT < 30) return ""\n            val latch = CountDownLatch(1)\n            var hash = ""\n            service.takeScreenshot(android.view.Display.DEFAULT_DISPLAY, service.mainExecutor, object : AccessibilityService.TakeScreenshotCallback {\n                override fun onSuccess(result: AccessibilityService.ScreenshotResult) {\n                    try {\n                        val bitmap = Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace)?.copy(Bitmap.Config.ARGB_8888, false)\n                        if (bitmap != null) {\n                            var h = 17L\n                            val stepX = maxOf(1, bitmap.width / 32)\n                            val stepY = maxOf(1, bitmap.height / 32)\n                            var y = 0\n                            while (y < bitmap.height) {\n                                var x = 0\n                                while (x < bitmap.width) {\n                                    h = h * 31 + bitmap.getPixel(x, y)\n                                    x += stepX\n                                }\n                                y += stepY\n                            }\n                            hash = h.toString(16)\n                            bitmap.recycle()\n                        }\n                    } catch (_: Exception) { }\n                    try { result.hardwareBuffer.close() } catch (_: Exception) { }\n                    latch.countDown()\n                }\n                override fun onFailure(errorCode: Int) { latch.countDown() }\n            })\n            latch.await(1500, TimeUnit.MILLISECONDS)\n            return hash\n        }\n\n        fun readScreen(): String {
             val root = instance?.rootInActiveWindow ?: return ""
             val out = LinkedHashSet<String>()
             collectText(root, out)
-            return out.joinToString("
-").take(6000)
+            return out.joinToString("\n").take(6000)
         }
 
         private fun collectText(node: AccessibilityNodeInfo, out: MutableSet<String>) {
