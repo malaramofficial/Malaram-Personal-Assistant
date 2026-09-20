@@ -5,6 +5,7 @@ on:
     branches:
       - "main"
       - "github-open-source-integration"
+      - "opendroid-inspired-agent-architecture"
   workflow_dispatch:
 
 jobs:
