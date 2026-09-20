@@ -97,12 +97,12 @@ class MainActivity : Activity() {
         }
         val endpoint = EditText(this).apply {
             hint = "OpenAI-compatible endpoint"
-            setText("https://api.openai.com")
+            setText(AiBrain.configuredEndpoint(this))
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
         }
         val model = EditText(this).apply {
             hint = "Model name"
-            setText("gpt-4o-mini")
+            setText(AiBrain.configuredModel(this))
         }
         val apiKey = EditText(this).apply {
             hint = "API key"
@@ -119,8 +119,12 @@ class MainActivity : Activity() {
             .setTitle("🧠 AI Brain Settings")
             .setView(box)
             .setPositiveButton("Remote AI सेव करें") { _, _ ->
-                AiBrain.configureRemote(this, endpoint.text.toString(), model.text.toString(), apiKey.text.toString())
-                status.text = AiBrain.providerStatus(this)
+                try {
+                    AiBrain.configureRemote(this, endpoint.text.toString(), model.text.toString(), apiKey.text.toString())
+                    status.text = AiBrain.providerStatus(this)
+                } catch (e: Exception) {
+                    status.text = e.message ?: "Remote AI settings गलत हैं।"
+                }
             }
             .setNeutralButton("Local AI चुनें") { _, _ ->
                 if (AiBrain.isModelReady(this)) {
