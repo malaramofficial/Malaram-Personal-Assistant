@@ -32,6 +32,9 @@ class HindiFemaleTts(private val context: Context) {
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var tts: OfflineTts? = null
+    @Volatile private var speaking = false
+
+    fun isSpeaking(): Boolean = speaking
 
     fun prepare(onStatus: (String) -> Unit, onReady: (Boolean) -> Unit) {
         executor.execute {
@@ -41,7 +44,12 @@ class HindiFemaleTts(private val context: Context) {
                 if (!modelFile.exists()) {
                     mainHandler.post { onStatus("पहली बार महिला आवाज डाउनलोड हो रही है…") }
                     val archive = File(context.cacheDir, MODEL_ARCHIVE)
-                    download(MODEL_URL, archive)
+                    val temp = File(context.cacheDir, "$MODEL_ARCHIVE.part")
+                    downloadWithRetry(MODEL_URL, temp)
+                    if (!temp.renameTo(archive)) {
+                        temp.copyTo(archive, overwrite = true)
+                        temp.delete()
+                    }
                     mainHandler.post { onStatus("महिला आवाज तैयार की जा रही है…") }
                     extractTarBz2(archive, context.filesDir)
                     archive.delete()
@@ -80,9 +88,13 @@ class HindiFemaleTts(private val context: Context) {
         executor.execute {
             try {
                 val engine = tts ?: return@execute
+                speaking = true
                 val audio = engine.generateWithConfig(text, GenerationConfig(sid = 0, speed = speed))
                 play(audio.samples, audio.sampleRate)
-            } catch (_: Exception) { }
+            } catch (_: Exception) {
+            } finally {
+                speaking = false
+            }
         }
     }
 
@@ -112,6 +124,21 @@ class HindiFemaleTts(private val context: Context) {
             track.stop()
             track.release()
         }
+    }
+
+    private fun downloadWithRetry(urlString: String, destination: File) {
+        var last: Exception? = null
+        repeat(3) {
+            try {
+                download(urlString, destination)
+                if (destination.length() > 1024L) return
+            } catch (e: Exception) {
+                last = e
+                destination.delete()
+                Thread.sleep(1000L * (it + 1))
+            }
+        }
+        throw last ?: IllegalStateException("Download failed")
     }
 
     private fun download(urlString: String, destination: File) {
