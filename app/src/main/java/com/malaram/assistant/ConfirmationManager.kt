@@ -29,9 +29,12 @@ object ConfirmationManager {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .remove(KEY_PENDING).remove(KEY_CREATED).apply()
 
-    fun isConfirm(text: String) =
-        listOf("हाँ", "हां", "yes", "कर दो", "भेज दो", "पक्का", "confirm", "कन्फर्म")
-            .any { text.trim().lowercase().contains(it) }
+    fun isConfirm(text: String): Boolean {
+        val value = text.trim().lowercase()
+        if (value.contains("नहीं") || value.contains("मत ")) return false
+        return listOf("हाँ", "हां", "yes", "कर दो", "भेज दो", "पक्का", "confirm", "कन्फर्म")
+            .any { value == it || value.startsWith("$it ") || value.endsWith(" $it") }
+    }
 
     fun isCancel(text: String) =
         listOf("नहीं", "रद्द", "cancel", "मत करो", "छोड़ो", "stop", "बंद")
