@@ -7,7 +7,10 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
 import android.speech.RecognizerIntent
+import android.text.InputType
 import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -39,38 +42,24 @@ class MainActivity : Activity() {
         localAiButton = findViewById(R.id.localAiButton)
 
         findViewById<Button>(R.id.listenButton).setOnClickListener { listen() }
-        findViewById<Button>(R.id.testVoiceButton).setOnClickListener {
-            speak("नमस्ते माला राम जी, मैं आपकी पर्सनल असिस्टेंट हूँ। बताइए, मैं आपके लिए क्या करूँ?")
-        }
+        findViewById<Button>(R.id.testVoiceButton).setOnClickListener { speak("नमस्ते माला राम जी, मैं आपकी पर्सनल असिस्टेंट हूँ। बताइए, मैं आपके लिए क्या करूँ?") }
         findViewById<Button>(R.id.aiSettingsButton).setOnClickListener { showAiSettings() }
         localAiButton.setOnClickListener { downloadOrCheckLocalAi() }
-        findViewById<Button>(R.id.accessibilityButton).setOnClickListener {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        }
-        findViewById<Button>(R.id.notificationButton).setOnClickListener {
-            startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
-        }
+        findViewById<Button>(R.id.accessibilityButton).setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        findViewById<Button>(R.id.notificationButton).setOnClickListener { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) }
         findViewById<Button>(R.id.voiceAssistantButton).setOnClickListener {
             try { startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) }
-            catch (_: Exception) {
-                Toast.makeText(this, "Voice Assistant settings उपलब्ध नहीं हैं।", Toast.LENGTH_SHORT).show()
-            }
+            catch (_: Exception) { Toast.makeText(this, "Voice Assistant settings उपलब्ध नहीं हैं।", Toast.LENGTH_SHORT).show() }
         }
         wakeWordButton.setOnClickListener { toggleWakeWord() }
         NotificationReplyStore.restore(this)
 
-        if (android.os.Build.VERSION.SDK_INT >= 33) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 10)
-        }
-
+        if (android.os.Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 10)
         status.text = "महिला हिंदी आवाज तैयार की जा रही है…"
-        femaleTts.prepare(
-            onStatus = { status.text = it },
-            onReady = {
-                ttsReady = it
-                if (it) speak("नमस्ते माला राम जी, मैं आपकी पर्सनल असिस्टेंट हूँ।")
-            }
-        )
+        femaleTts.prepare(onStatus = { status.text = it }, onReady = {
+            ttsReady = it
+            if (it) speak("नमस्ते माला राम जी, मैं आपकी पर्सनल असिस्टेंट हूँ।")
+        })
         updateWakeWordButton()
         updateLocalAiButton()
     }
@@ -82,15 +71,15 @@ class MainActivity : Activity() {
 
     private fun downloadOrCheckLocalAi() {
         if (AiBrain.isModelReady(this)) {
-            status.text = "Local Qwen3 AI तैयार है। Gemini/API key की जरूरत नहीं है।"
+            AiBrain.useLocal(this)
+            status.text = "Optional Local AI तैयार है। अब Local AI चुना गया है।"
             updateLocalAiButton()
             return
         }
-
         try {
             AiBrain.startModelDownload(this)
-            status.text = "Local AI download शुरू हो गया। Wi‑Fi या Mobile Data दोनों चलेंगे। लगभग 1.28 GB है।"
-            Toast.makeText(this, "Qwen3 Local AI download शुरू हो गया।", Toast.LENGTH_LONG).show()
+            status.text = "Optional Local AI download शुरू हो गया। लगभग 484 MB है।"
+            Toast.makeText(this, "Qwen3 0.6B download शुरू हो गया।", Toast.LENGTH_LONG).show()
             updateLocalAiButton()
         } catch (e: Exception) {
             status.text = "Local AI download शुरू नहीं हुआ: " + (e.message ?: "अज्ञात त्रुटि")
@@ -98,87 +87,87 @@ class MainActivity : Activity() {
     }
 
     private fun updateLocalAiButton() {
-        localAiButton.text = if (AiBrain.isModelReady(this)) {
-            "✅ LOCAL AI तैयार है"
-        } else {
-            "🤖 LOCAL AI MODEL डाउनलोड करें • 1.28 GB"
+        localAiButton.text = if (AiBrain.isModelReady(this)) "✅ OPTIONAL LOCAL AI • 0.6B तैयार" else "🤖 OPTIONAL LOCAL AI डाउनलोड • ~484 MB"
+    }
+
+    private fun showAiSettings() {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 10, 40, 0)
         }
+        val endpoint = EditText(this).apply {
+            hint = "OpenAI-compatible endpoint"
+            setText("https://api.openai.com")
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        }
+        val model = EditText(this).apply {
+            hint = "Model name"
+            setText("gpt-4o-mini")
+        }
+        val apiKey = EditText(this).apply {
+            hint = "API key"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        box.addView(endpoint)
+        box.addView(model)
+        box.addView(apiKey)
+        box.addView(TextView(this).apply {
+            text = "\nRemote AI default है। Local AI अलग से optional है और अब 1.28 GB वाला model नहीं है।"
+        })
+
+        AlertDialog.Builder(this)
+            .setTitle("🧠 AI Brain Settings")
+            .setView(box)
+            .setPositiveButton("Remote AI सेव करें") { _, _ ->
+                AiBrain.configureRemote(this, endpoint.text.toString(), model.text.toString(), apiKey.text.toString())
+                status.text = AiBrain.providerStatus(this)
+            }
+            .setNeutralButton("Local AI चुनें") { _, _ ->
+                if (AiBrain.isModelReady(this)) {
+                    AiBrain.useLocal(this)
+                    status.text = AiBrain.providerStatus(this)
+                } else {
+                    Toast.makeText(this, "पहले Optional Local AI download करें।", Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("बंद", null)
+            .show()
     }
 
     private fun toggleWakeWord() {
         if (isWakeWordEnabled()) {
-            stopService(Intent(this, WakeWordService::class.java).apply {
-                action = WakeWordService.ACTION_STOP
-            })
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                .putBoolean(WAKE_ENABLED, false).apply()
-            status.text = "Hello Assistant बंद है।"
+            stopService(Intent(this, WakeWordService::class.java).apply { action = WakeWordService.ACTION_STOP })
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(WAKE_ENABLED, false).apply()
+            status.text = "Hello Assistant बंद है."
             updateWakeWordButton()
             return
         }
-
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO)
             status.text = "पहले Microphone permission दें।"
             return
         }
-
         startWakeWordService()
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-            .putBoolean(WAKE_ENABLED, true).apply()
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(WAKE_ENABLED, true).apply()
         status.text = "Hello Assistant wake word चालू है।"
         updateWakeWordButton()
     }
 
     private fun startWakeWordService() {
         try {
-            ContextCompat.startForegroundService(
-                this,
-                Intent(this, WakeWordService::class.java).apply {
-                    action = WakeWordService.ACTION_START
-                }
-            )
-        } catch (e: Exception) {
-            status.text = "Hands-free mode शुरू नहीं हुआ: " + (e.message ?: "अज्ञात त्रुटि")
-        }
+            ContextCompat.startForegroundService(this, Intent(this, WakeWordService::class.java).apply { action = WakeWordService.ACTION_START })
+        } catch (e: Exception) { status.text = "Hands-free mode शुरू नहीं हुआ: " + (e.message ?: "अज्ञात त्रुटि") }
     }
 
-    private fun showAiSettings() {
-        AlertDialog.Builder(this)
-            .setTitle("🧠 Local AI Brain")
-            .setMessage(
-                "अब Gemini API key की जरूरत नहीं है.\n\n" +
-                    "Assistant Qwen3-1.7B को फोन में local चलाएगा। " +
-                    "पहली बार लगभग 1.28 GB model डाउनलोड करना होगा। " +
-                    "Wi‑Fi या Mobile Data दोनों से डाउनलोड होगा।"
-            )
-            .setPositiveButton("Local AI डाउनलोड करें") { _, _ -> downloadOrCheckLocalAi() }
-            .setNegativeButton("बंद", null)
-            .show()
-    }
-
-    private fun isWakeWordEnabled() =
-        getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(WAKE_ENABLED, false)
+    private fun isWakeWordEnabled() = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(WAKE_ENABLED, false)
 
     private fun updateWakeWordButton() {
-        wakeWordButton.text = if (isWakeWordEnabled()) {
-            "🟢 Hello Assistant बंद करें"
-        } else {
-            "🎙️ Hello Assistant चालू करें"
-        }
+        wakeWordButton.text = if (isWakeWordEnabled()) "🟢 Hello Assistant बंद करें" else "🎙️ Hello Assistant चालू करें"
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
-    ) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_RECORD_AUDIO &&
-            grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
-        ) toggleWakeWord()
+        if (requestCode == REQUEST_RECORD_AUDIO && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) toggleWakeWord()
     }
 
     private fun listen() {
@@ -188,16 +177,13 @@ class MainActivity : Activity() {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "hi-IN")
                 putExtra(RecognizerIntent.EXTRA_PROMPT, "माला राम जी, आदेश बोलिए")
             }, 100)
-        } catch (_: Exception) {
-            speak("आवाज़ पहचान सेवा उपलब्ध नहीं है।")
-        }
+        } catch (_: Exception) { speak("आवाज़ पहचान सेवा उपलब्ध नहीं है।") }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != 100 || resultCode != RESULT_OK) return
-        val heard = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            ?.firstOrNull()?.trim() ?: return
+        val heard = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim() ?: return
         handleHeard(heard)
     }
 
@@ -205,23 +191,14 @@ class MainActivity : Activity() {
         status.text = "सुना: $heard"
         val result = CommandEngine.executeResult(this, heard)
         history.add(heard, result.text)
-
         if (result.needsAgent) {
-            status.text = "Local AI agent स्क्रीन समझ रहा है…"
+            status.text = "AI agent स्क्रीन समझ रहा है…"
             speak(result.text)
-            AiBrain.runAgent(this, heard) { answer ->
-                history.add(heard, answer)
-                speak(answer)
-            }
+            AiBrain.runAgent(this, heard) { answer -> history.add(heard, answer); speak(answer) }
         } else if (result.needsAi) {
-            status.text = "Local AI सोच रहा है…"
-            AiBrain.ask(this, heard) { answer ->
-                history.add(heard, answer)
-                speak(answer)
-            }
-        } else {
-            speak(result.text)
-        }
+            status.text = "AI सोच रहा है…"
+            AiBrain.ask(this, heard) { answer -> history.add(heard, answer); speak(answer) }
+        } else speak(result.text)
     }
 
     private fun speak(message: String) {
