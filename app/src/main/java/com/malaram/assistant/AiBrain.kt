@@ -123,13 +123,15 @@ object AiBrain {
 
     private fun localProvider(context: Context): LlmProvider {
         if (!isModelReady(context)) throw IllegalStateException("Local Qwen3 0.6B अभी तैयार नहीं है।")
-        val model = cachedModel ?: Llama.loadModel(
-            modelPath = modelFile(context).absolutePath,
-            config = LlamaConfig(contextSize = 2048, threads = Runtime.getRuntime().availableProcessors().coerceIn(4, 8), gpuLayers = 0, temperature = 0.1f, topP = 0.8f, topK = 20)
-        ).also { cachedModel = it }
+        val model = cachedModel ?: runBlocking {
+            Llama.loadModel(
+                modelPath = modelFile(context).absolutePath,
+                config = LlamaConfig(contextSize = 2048, threads = Runtime.getRuntime().availableProcessors().coerceIn(4, 8), gpuLayers = 0, temperature = 0.1f, topP = 0.8f, topK = 20)
+            )
+        }.also { cachedModel = it }
         return object : LlmProvider {
             override fun complete(context: Context, systemPrompt: String, userPrompt: String, maxTokens: Int): String =
-                Llama.complete(model, prompt = userPrompt, systemPrompt = systemPrompt, maxTokens = maxTokens).text
+                runBlocking { Llama.complete(model, prompt = userPrompt, systemPrompt = systemPrompt, maxTokens = maxTokens).text }
         }
     }
 
