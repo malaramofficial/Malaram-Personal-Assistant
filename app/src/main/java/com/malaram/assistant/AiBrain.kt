@@ -23,6 +23,10 @@ import org.json.JSONObject
 object AiBrain {
     private val executor = Executors.newSingleThreadExecutor()
     private var cachedModel: dev.ffmpegkit.llama.LlamaModel? = null
+    @Volatile private var agentRunning = false
+    @Volatile private var agentCancelled = false
+    private const val AGENT_MAX_STEPS = 10
+    private const val AGENT_TIMEOUT_MS = 60_000L
 
     const val MODEL_FILE = "Qwen3-0.6B-Q4_K_M.gguf"
     const val MODEL_MIN_BYTES = 350_000_000L
@@ -212,26 +216,91 @@ object AiBrain {
         return AgentAction(action, argument)
     }
 
+    fun cancelAgent() {
+        agentCancelled = true
+    }
+
     fun runAgent(context: Context, task: String, callback: (String) -> Unit) {
+        if (agentRunning) {
+            callback("एक AI काम पहले से चल रहा है।")
+            return
+        }
+        agentRunning = true
+        agentCancelled = false
         executor.execute {
             var finalText = "मैं यह काम पूरा नहीं कर पाया।"
+            var actionsTaken = 0
+            var lastState = ""
+            var repeatedStateCount = 0
+            val startedAt = System.currentTimeMillis()
             try {
-                for (stepIndex in 0 until 6) {
-                    val screen = AssistantAccessibilityService.readScreen().replace(Regex("\\s+"), " ").take(3500)
-                    val prompt = "/no_think\nकाम: " + task + "\nस्क्रीन: " + screen.ifBlank { "(खाली)" } +
+                for (stepIndex in 0 until AGENT_MAX_STEPS) {
+                    if (agentCancelled) {
+                        finalText = "AI Agent रोक दिया गया।"
+                        break
+                    }
+                    if (System.currentTimeMillis() - startedAt > AGENT_TIMEOUT_MS) {
+                        finalText = "AI Agent समय सीमा पर रुक गया।"
+                        break
+                    }
+                    val screen = AssistantAccessibilityService.readScreen().replace(Regex("\\s+"), " ").take(5000)
+                    val hash = AssistantAccessibilityService.screenshotHash()
+                    val state = (hash.ifBlank { screen }).take(512)
+                    if (state.isNotBlank() && state == lastState) repeatedStateCount++ else repeatedStateCount = 0
+                    if (repeatedStateCount >= 3) {
+                        finalText = "स्क्रीन लगातार नहीं बदल रही थी, इसलिए Agent को सुरक्षित रूप से रोक दिया।"
+                        break
+                    }
+                    lastState = state
+                    val prompt = "/no_think\nकाम: " + task + "\nस्क्रीन टेक्स्ट: " + screen.ifBlank { "(खाली)" } +
+                        "\nस्क्रीन hash: " + hash.ifBlank { "(उपलब्ध नहीं)" } +
                         "\nस्टेप: " + stepIndex + "\nकेवल अगला atomic action दो। JSON या ACTION=... format स्वीकार है। " +
                         "Allowed: open_app, click, type, enter, back, swipe_up, swipe_down, wait, done, answer. " +
-                        "पूरा लक्ष्य पूरा होने तक काम करो; ऐप खुलना अकेले सफलता नहीं है।"
+                        "हर action के बाद नई स्क्रीन देखकर ही अगला निर्णय लो। बिना evidence के done मत दो; ऐप खुलना अकेले सफलता नहीं है।"
                     val raw = provider(context).complete(context, SYSTEM_PROMPT, prompt, 90)
-                    val parsed = parseAgentAction(raw) ?: break
+                    val parsed = parseAgentAction(raw) ?: run {
+                        finalText = "Agent ने वैध action नहीं दिया।"
+                        break
+                    }
                     when (parsed.action) {
-                        "done" -> { finalText = parsed.argument.ifBlank { "काम पूरा हो गया।" }; break }
-                        "answer" -> { finalText = parsed.argument.ifBlank { "मैं यह काम पूरा नहीं कर पाया।" }; break }
-                        "wait" -> Thread.sleep(250)
-                        else -> finalText = CommandEngine.executeAgentAction(context, parsed.action, parsed.argument)
+                        "done" -> {
+                            finalText = parsed.argument.ifBlank { "काम पूरा हो गया।" }
+                            if (actionsTaken == 0) finalText = "Agent ने कोई action किए बिना काम पूरा बताया, इसलिए सफलता नहीं मानी गई।"
+                            else break
+                        }
+                        "answer" -> {
+                            finalText = parsed.argument.ifBlank { "मैं यह काम पूरा नहीं कर पाया।" }
+                            break
+                        }
+                        "wait" -> Thread.sleep(350)
+                        else -> {
+                            val before = state
+                            finalText = CommandEngine.executeAgentAction(context, parsed.action, parsed.argument)
+                            actionsTaken++
+                            Thread.sleep(250)
+                            val afterHash = AssistantAccessibilityService.screenshotHash()
+                            val afterScreen = AssistantAccessibilityService.readScreen().replace(Regex("\\s+"), " ").take(1200)
+                            val failed = finalText.contains("नहीं") || finalText.contains("उपलब्ध नहीं") || finalText.contains("अज्ञात")
+                            if (failed) {
+                                finalText = "Action '" + parsed.action + "' सफल नहीं हुआ: " + finalText
+                                break
+                            }
+                            if (afterHash.isNotBlank() && before == afterHash && parsed.action !in setOf("wait", "type")) {
+                                finalText = "Action के बाद स्क्रीन में कोई बदलाव नहीं मिला; Agent को रोक दिया।"
+                                break
+                            }
+                            if (afterScreen.isBlank() && afterHash.isBlank()) {
+                                finalText = "Action के बाद स्क्रीन state verify नहीं हो सकी।"
+                                break
+                            }
+                        }
                     }
                 }
-            } catch (e: Exception) { finalText = "AI Agent रुक गया: " + (e.message ?: "अज्ञात त्रुटि") }
+            } catch (e: Exception) {
+                finalText = "AI Agent रुक गया: " + (e.message ?: "अज्ञात त्रुटि")
+            } finally {
+                agentRunning = false
+            }
             Handler(Looper.getMainLooper()).post { callback(finalText) }
         }
     }
