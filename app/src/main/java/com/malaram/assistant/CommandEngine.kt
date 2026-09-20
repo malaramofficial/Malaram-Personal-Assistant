@@ -6,15 +6,23 @@ import android.net.Uri
 import android.provider.Settings
 
 object CommandEngine {
-    data class Result(val text: String, val needsAi: Boolean = false, val needsAgent: Boolean = false)
+    data class Result(val text: String, val needsAi: Boolean = false, val needsAgent: Boolean = false, val agentTask: String? = null)
 
     fun executeResult(context: Context, raw: String): Result {
+        return executeResultInternal(context, raw, allowConfirmedSensitive = false)
+    }
+
+    private fun executeResultInternal(context: Context, raw: String, allowConfirmedSensitive: Boolean): Result {
         val text = raw.trim().lowercase()
         val pending = ConfirmationManager.getPending(context)
-        if (pending != null) {
+        if (pending != null && !allowConfirmedSensitive) {
             if (ConfirmationManager.isConfirm(text)) {
                 ConfirmationManager.clear(context)
-                return Result("पुष्टि मिल गई। सुरक्षा के कारण संवेदनशील काम अभी स्वतः execute नहीं किया गया।")
+                return Result(
+                    "पुष्टि मिल गई। अब उसी संवेदनशील आदेश को execute करने की कोशिश कर रहा हूँ।",
+                    needsAgent = true,
+                    agentTask = pending
+                )
             }
             if (ConfirmationManager.isCancel(text)) {
                 ConfirmationManager.clear(context)
@@ -22,7 +30,7 @@ object CommandEngine {
             }
             return Result("एक संवेदनशील काम लंबित है। “हाँ” कहकर पुष्टि करें या “रद्द” कहें।")
         }
-        if (isSensitive(text)) {
+        if (isSensitive(text) && !allowConfirmedSensitive) {
             ConfirmationManager.setPending(context, raw)
             return Result("यह संवेदनशील आदेश है। “हाँ” कहकर पुष्टि करें; “रद्द” कहें तो नहीं होगा।")
         }
@@ -59,8 +67,10 @@ object CommandEngine {
                 typeReply(raw)
             text.contains("गूगल") || text.contains("google") || text.startsWith("सर्च") ->
                 Result(searchGoogle(context, raw))
-            text == "रुको" || text == "रुक जाओ" || text == "stop" || text == "cancel" ->
-                Result("ठीक है, रुक गया।")
+            text == "रुको" || text == "रुक जाओ" || text == "stop" || text == "cancel" -> {
+                AiBrain.cancelAgent()
+                Result("ठीक है, चल रहा AI काम रोक दिया।")
+            }
             else -> Result("मैंने सुना: $raw।", needsAi = true)
         }
     }
