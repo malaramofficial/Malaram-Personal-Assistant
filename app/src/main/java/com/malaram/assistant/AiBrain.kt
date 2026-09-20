@@ -54,9 +54,14 @@ object AiBrain {
     """
 
     fun configureRemote(context: Context, endpoint: String, model: String, apiKey: String) {
+        val cleanEndpoint = endpoint.trim().ifBlank { DEFAULT_ENDPOINT }.trimEnd('/')
+        val uri = Uri.parse(cleanEndpoint)
+        require(uri.scheme.equals("https", true) || uri.host == "localhost" || uri.host == "127.0.0.1") {
+            "Remote AI endpoint के लिए HTTPS जरूरी है।"
+        }
         val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(KEY_PROVIDER, PROVIDER_REMOTE)
-            .putString(KEY_ENDPOINT, endpoint.trim().ifBlank { DEFAULT_ENDPOINT })
+            .putString(KEY_ENDPOINT, cleanEndpoint)
             .putString(KEY_MODEL, model.trim().ifBlank { DEFAULT_MODEL })
 
         if (apiKey.isNotBlank()) {
@@ -94,6 +99,12 @@ object AiBrain {
             String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
         } catch (_: Exception) { "" }
     }
+
+    fun configuredEndpoint(context: Context): String =
+        prefs(context).getString(KEY_ENDPOINT, DEFAULT_ENDPOINT) ?: DEFAULT_ENDPOINT
+
+    fun configuredModel(context: Context): String =
+        prefs(context).getString(KEY_MODEL, DEFAULT_MODEL) ?: DEFAULT_MODEL
 
     fun useLocal(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_PROVIDER, PROVIDER_LOCAL).apply()
