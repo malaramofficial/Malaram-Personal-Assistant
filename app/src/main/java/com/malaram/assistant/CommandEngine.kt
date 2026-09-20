@@ -30,7 +30,11 @@ object CommandEngine {
         val plan = AgentPlanner.plan(raw)
         if (plan.isNotEmpty()) return Result(executePlan(plan))
 
-        if (isCompoundAppTask(text)) {\n            return Result("मैं पूरे काम को समझकर चरण-दर-चरण कर रहा हूँ।", needsAgent = true)\n        }\n\n        return when {
+        if (isCompoundAppTask(text)) {
+            return Result("मैं पूरे काम को समझकर चरण-दर-चरण कर रहा हूँ।", needsAgent = true)
+        }
+
+        return when {
             text.contains("youtube") || text.contains("यूट्यूब") ->
                 Result(openAppOrUrl(context, "com.google.android.youtube", "https://www.youtube.com", "YouTube खोल रहा हूँ।"))
             text.contains("whatsapp") || text.contains("व्हाट्सऐप") || text.contains("व्हाट्सएप") ->
