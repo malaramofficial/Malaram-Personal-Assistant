@@ -40,6 +40,9 @@ class WakeWordService : Service() {
         private const val ENCODER_FILE = "wakeword/encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
         private const val DECODER_FILE = "wakeword/decoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
         private const val JOINER_FILE = "wakeword/joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
+        // Diagnostic stage 1: prove the foreground microphone service itself is stable
+        // before touching AudioRecord or Sherpa native KWS.
+        private const val DIAGNOSTIC_STAGE = 1
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -58,6 +61,11 @@ class WakeWordService : Service() {
         super.onCreate()
         createChannel()
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification("Assistant शुरू हो रहा है…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+        if (DIAGNOSTIC_STAGE == 1) {
+            updateNotification("DIAGNOSTIC 1: microphone service stable-test")
+            return
+        }
+
         tts = HindiFemaleTts(this)
         fallbackSpeaker = AssistantSpeaker(this)
         tts.prepare(
@@ -72,6 +80,10 @@ class WakeWordService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { stopSelf(); return START_NOT_STICKY }
+        if (DIAGNOSTIC_STAGE == 1) {
+            updateNotification("DIAGNOSTIC 1 PASS: service alive; KWS not started")
+            return START_NOT_STICKY
+        }
         startWakeListening()
         return START_STICKY
     }
@@ -234,8 +246,10 @@ class WakeWordService : Service() {
         cleanupAudio()
         try { kws?.release() } catch (_: Exception) {}
         kws = null
-        tts.shutdown()
-        fallbackSpeaker.shutdown()
+        if (DIAGNOSTIC_STAGE != 1) {
+            tts.shutdown()
+            fallbackSpeaker.shutdown()
+        }
         super.onDestroy()
     }
 
