@@ -50,12 +50,16 @@ object AiBrain {
     """
 
     fun configureRemote(context: Context, endpoint: String, model: String, apiKey: String) {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(KEY_PROVIDER, PROVIDER_REMOTE)
             .putString(KEY_ENDPOINT, endpoint.trim().ifBlank { DEFAULT_ENDPOINT })
             .putString(KEY_MODEL, model.trim().ifBlank { DEFAULT_MODEL })
-        if (apiKey.isNotBlank()) saveApiKey(apiKey.trim())
-        pendingApiKey?.let { prefs.putString(KEY_API, it)\n        pendingApiKey = null\n        prefs.apply()
+
+        if (apiKey.isNotBlank()) {
+            editor.putString(KEY_API, encryptApiKey(apiKey.trim()))
+        }
+
+        editor.apply()
     }
 
     private fun key(): SecretKey {
@@ -64,22 +68,17 @@ object AiBrain {
         if (existing is SecretKey) return existing
         val generator = KeyGenerator.getInstance("AES", KEYSTORE)
         generator.init(256)
-        return generator.generateKey().also { /* generated key is stored by AndroidKeyStore */ }
+        return generator.generateKey()
     }
 
-    private fun saveApiKey(value: String) {
+    private fun encryptApiKey(value: String): String {
         val secret = key()
         val iv = ByteArray(12).also { java.security.SecureRandom().nextBytes(it) }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, secret, GCMParameterSpec(128, iv))
         val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
-        // Store only ciphertext + IV in app prefs; the AES key remains in Android Keystore.
-        val encoded = Base64.encodeToString(iv + encrypted, Base64.NO_WRAP)
-        // This method has no Context by design; key alias is stable and prefs are supplied by caller below.
-        pendingApiKey = encoded
+        return Base64.encodeToString(iv + encrypted, Base64.NO_WRAP)
     }
-
-    @Volatile private var pendingApiKey: String? = null
 
     private fun readApiKey(context: Context): String {
         val encoded = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_API, "").orEmpty()
