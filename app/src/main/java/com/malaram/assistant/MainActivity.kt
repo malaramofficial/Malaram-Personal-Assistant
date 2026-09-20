@@ -71,9 +71,11 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (isWakeWordEnabled() && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            startWakeWordService()
-        }
+        // Diagnostic safety: do not auto-restart the microphone/native wake-word
+        // service when the Activity is reopened. If the service crashes, an
+        // auto-restart here would create an endless crash loop. Wake word is
+        // started only by an explicit user action until the startup path is
+        // validated on-device.
     }
 
     private fun toggleWakeWord() {
