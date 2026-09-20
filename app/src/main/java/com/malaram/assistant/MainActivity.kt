@@ -158,7 +158,14 @@ class MainActivity : Activity() {
         status.text = "सुना: $heard"
         val result = CommandEngine.executeResult(this, heard)
         history.add(heard, result.text)
-        if (result.needsAi) {
+        if (result.needsAgent) {
+            status.text = "AI agent स्क्रीन समझ रहा है…"
+            speak(result.text)
+            AiBrain.runAgent(this, heard) { answer ->
+                history.add(heard, answer)
+                speak(answer)
+            }
+        } else if (result.needsAi) {
             status.text = "AI सोच रहा है…"
             AiBrain.ask(this, heard) { answer ->
                 history.add(heard, answer)
