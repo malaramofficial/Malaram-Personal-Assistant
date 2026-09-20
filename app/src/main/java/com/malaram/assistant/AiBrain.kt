@@ -8,13 +8,13 @@ import android.os.Handler
 import android.os.Looper
 import dev.ffmpegkit.llama.Llama
 import dev.ffmpegkit.llama.LlamaConfig
-import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
 import kotlinx.coroutines.runBlocking
 
 object AiBrain {
     private val executor = Executors.newSingleThreadExecutor()
+    private var cachedModel: dev.ffmpegkit.llama.LlamaModel? = null
 
     const val MODEL_FILE = "Qwen3-1.7B-Q4_K_M.gguf"
     const val MODEL_SIZE_BYTES = 1_282_439_264L
@@ -140,17 +140,23 @@ object AiBrain {
             )
         }
 
+        cachedModel?.let { return it }
         return Llama.loadModel(
             modelPath = modelFile(context).absolutePath,
             config = LlamaConfig(
-                contextSize = 4096,
-                threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 6),
+                contextSize = 2048,
+                threads = Runtime.getRuntime().availableProcessors().coerceIn(4, 8),
                 gpuLayers = 0,
-                temperature = 0.2f,
-                topP = 0.9f,
+                temperature = 0.1f,
+                topP = 0.8f,
                 topK = 20
             )
-        )
+        ).also { cachedModel = it }
+    }
+
+    fun releaseModel() {
+        cachedModel?.let { try { Llama.releaseModel(it) } catch (_: Exception) {} }
+        cachedModel = null
     }
 
     fun ask(context: Context, userText: String, callback: (String) -> Unit) {
@@ -163,7 +169,7 @@ object AiBrain {
                             model,
                             prompt = userText,
                             systemPrompt = SYSTEM_PROMPT,
-                            maxTokens = 256
+                            maxTokens = 128
                         ).text
                     } finally {
                         Llama.releaseModel(model)
@@ -177,117 +183,69 @@ object AiBrain {
         }
     }
 
+    private data class AgentAction(val action: String, val argument: String)
+
+    private fun parseAgentAction(raw: String): AgentAction? {
+        val cleaned = raw.trim()
+        val actionMatch = Regex("""["']?action["']?\\s*[:=]\\s*["']([^"'\\n]+)["']""", RegexOption.IGNORE_CASE).find(cleaned)
+        val argMatch = Regex("""["']?argument["']?\\s*[:=]\\s*["']([^"'\\n]*)["']""", RegexOption.IGNORE_CASE).find(cleaned)
+        val action = actionMatch?.groupValues?.getOrNull(1)?.trim()?.lowercase()
+            ?: Regex("""ACTION\\s*=\\s*([^\\n|]+)""", RegexOption.IGNORE_CASE).find(cleaned)?.groupValues?.getOrNull(1)?.trim()?.lowercase()
+            ?: return null
+        val argument = argMatch?.groupValues?.getOrNull(1)?.trim()
+            ?: Regex("""(?:ARG|ARGUMENT)\\s*=\\s*(.*)""", RegexOption.IGNORE_CASE).find(cleaned)?.groupValues?.getOrNull(1)?.trim()
+            ?: ""
+        return AgentAction(action, argument)
+    }
+
     fun runAgent(context: Context, task: String, callback: (String) -> Unit) {
         executor.execute {
             var finalText = "मैं यह काम पूरा नहीं कर पाया।"
-
             try {
                 runBlocking {
                     val model = loadModel(context)
-                    try {
-                        val history = mutableListOf<String>()
-
-                        for (stepIndex in 0 until 8) {
-                            val screen = AssistantAccessibilityService.readScreen()
-                            val prompt = """
-                                /no_think
-                                उपयोगकर्ता का पूरा काम:
-                                """ + task + """
-
-                                अभी फोन की स्क्रीन Accessibility tree से:
-                                """ + screen.ifBlank {
-                                    "(स्क्रीन का टेक्स्ट उपलब्ध नहीं है)"
-                                } + """
-
-                                अब तक के कदम:
-                                """ + history.joinToString("\n").ifBlank {
-                                    "(कोई कदम नहीं)"
-                                } + """
-
-                                तुम फोन-agent हो। केवल अगला एक atomic action चुनो।
-                                JSON के अलावा कुछ मत लिखो।
-                                Schema:
-                                {"action":"open_app|click|type|enter|back|swipe_up|swipe_down|wait|done|answer","argument":"..."}
-
-                                नियम:
-                                - ऐप का नाम देखकर केवल ऐप खोलकर मत रुकना; पूरा लक्ष्य पूरा करो।
-                                - स्क्रीन में दिख रहे text/content-description को click के argument में इस्तेमाल करो।
-                                - search के लिए click, फिर type, फिर enter जैसे छोटे कदम दो।
-                                - लक्ष्य वास्तव में पूरा हो जाए तभी done दो।
-                                - Accessibility उपलब्ध नहीं है या स्क्रीन पढ़ी नहीं जा रही है तो answer में स्पष्ट कारण दो।
-                                - action हमेशा JSON string होना चाहिए।
-                            """.trimIndent()
-
-                            val raw = Llama.complete(
-                                model,
-                                prompt = prompt,
-                                systemPrompt = SYSTEM_PROMPT,
-                                maxTokens = 180
-                            ).text
-
-                            val jsonText = raw
-                                .substringAfter("{", raw)
-                                .substringBeforeLast("}", raw)
-                                .trim()
-
-                            val obj = JSONObject(jsonText)
-                            val actionValue = obj.opt("action")
-                            val action = when (actionValue) {
-                                is String -> actionValue.trim().lowercase()
-                                is JSONObject -> actionValue
-                                    .optString("value", actionValue.optString("name"))
-                                    .trim().lowercase()
-                                else -> ""
-                            }
-
-                            val argumentValue = obj.opt("argument")
-                            val argument = when (argumentValue) {
-                                is String -> argumentValue.trim()
-                                JSONObject.NULL -> ""
-                                null -> ""
-                                else -> argumentValue.toString().trim()
-                            }
-
-                            if (action.isBlank()) {
-                                finalText = "Local Agent ने सही action format नहीं दिया।"
+                    val history = mutableListOf<String>()
+                    for (stepIndex in 0 until 4) {
+                        val screen = AssistantAccessibilityService.readScreen()
+                            .replace(Regex("\\s+"), " ")
+                            .take(2500)
+                        val prompt = "/no_think\nकाम: " + task +
+                            "\nस्क्रीन: " + screen.ifBlank { "(खाली)" } +
+                            "\nपिछले कदम: " + history.joinToString(" | ").ifBlank { "(पहला कदम)" } +
+                            "\nकेवल अगला action दो। JSON या ACTION=... format स्वीकार है। " +
+                            "उदाहरण: {\"action\":\"click\",\"argument\":\"Search\"}. " +
+                            "Allowed: open_app, click, type, enter, back, swipe_up, swipe_down, wait, done, answer. " +
+                            "ऐप खुलना लक्ष्य नहीं है; पूरा काम करो। done तभी दो जब काम पूरा हो।"
+                        val raw = Llama.complete(model, prompt = prompt, systemPrompt = SYSTEM_PROMPT, maxTokens = 80).text
+                        val parsed = parseAgentAction(raw)
+                        if (parsed == null) {
+                            finalText = "Local Agent ने action नहीं समझा।"
+                            break
+                        }
+                        when (parsed.action) {
+                            "done" -> {
+                                finalText = parsed.argument.ifBlank { "काम पूरा हो गया।" }
                                 break
                             }
-
-                            when (action) {
-                                "done" -> {
-                                    finalText = argument.ifBlank { "काम पूरा हो गया।" }
-                                    break
-                                }
-                                "answer" -> {
-                                    finalText = argument.ifBlank {
-                                        "मैं यह काम पूरा नहीं कर पाया।"
-                                    }
-                                    break
-                                }
-                                "wait" -> {
-                                    Thread.sleep(900)
-                                    history += "wait"
-                                }
-                                else -> {
-                                    val result = CommandEngine.executeAgentAction(
-                                        context,
-                                        action,
-                                        argument
-                                    )
-                                    history += action + " -> " + result
-                                    finalText = result
-                                    Thread.sleep(900)
-                                }
+                            "answer" -> {
+                                finalText = parsed.argument.ifBlank { "मैं यह काम पूरा नहीं कर पाया।" }
+                                break
+                            }
+                            "wait" -> {
+                                Thread.sleep(250)
+                                history += "wait"
+                            }
+                            else -> {
+                                val result = CommandEngine.executeAgentAction(context, parsed.action, parsed.argument)
+                                history += parsed.action + " -> " + result
+                                finalText = result
                             }
                         }
-                    } finally {
-                        Llama.releaseModel(model)
                     }
                 }
             } catch (e: Exception) {
                 finalText = "Local Agent रुक गया: " + (e.message ?: "अज्ञात त्रुटि")
             }
-
             Handler(Looper.getMainLooper()).post { callback(finalText) }
         }
     }
