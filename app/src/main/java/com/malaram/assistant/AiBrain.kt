@@ -95,8 +95,27 @@ object AiBrain {
                     val raw = request(key, prompt)
                     val jsonText = raw.substringAfter("{", raw).substringBeforeLast("}", raw).trim()
                     val obj = JSONObject(jsonText)
-                    val action = obj.optString("action").trim().lowercase()
-                    val argument = obj.optString("argument").trim()
+
+                    // Gemini must return action as a JSON string, not a nested object.
+                    // Be defensive so one malformed model response cannot crash the agent.
+                    val actionValue = obj.opt("action")
+                    val action = when (actionValue) {
+                        is String -> actionValue.trim().lowercase()
+                        is JSONObject -> actionValue.optString("value", actionValue.optString("name")).trim().lowercase()
+                        else -> ""
+                    }
+                    val argumentValue = obj.opt("argument")
+                    val argument = when (argumentValue) {
+                        is String -> argumentValue.trim()
+                        JSONObject.NULL -> ""
+                        null -> ""
+                        else -> argumentValue.toString().trim()
+                    }
+
+                    if (action.isBlank()) {
+                        finalText = "Agent ने सही action format नहीं दिया।"
+                        break
+                    }
 
                     when (action) {
                         "done" -> {
