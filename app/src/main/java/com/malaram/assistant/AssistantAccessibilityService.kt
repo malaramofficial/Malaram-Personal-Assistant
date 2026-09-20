@@ -41,7 +41,11 @@ class AssistantAccessibilityService : AccessibilityService() {
         fun pressEnter(): Boolean {
             val root = instance?.rootInActiveWindow ?: return false
             val field = findEditable(root) ?: return false
-            return field.performAction(AccessibilityNodeInfo.ACTION_IME_ENTER)
+            return if (android.os.Build.VERSION.SDK_INT >= 30) {
+                field.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+            } else {
+                false
+            }
         }
 
         fun readScreen(): String {
