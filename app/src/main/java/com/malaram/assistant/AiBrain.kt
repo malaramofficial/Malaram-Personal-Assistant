@@ -1,53 +1,176 @@
 package com.malaram.assistant
 
+import android.app.DownloadManager
 import android.content.Context
+import android.net.Uri
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
-import org.json.JSONArray
+import dev.ffmpegkit.llama.Llama
+import dev.ffmpegkit.llama.LlamaConfig
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
+import java.io.File
 import java.util.concurrent.Executors
+import kotlinx.coroutines.runBlocking
 
 object AiBrain {
-    private const val PREFS = "assistant_ai"
-    private const val KEY_API = "gemini_api_key"
-    private const val MODEL = "gemini-3.8-flash"
-    private const val ENDPOINT =
-        "https://generativelanguage.googleapis.com/v1beta/models/" + MODEL + ":generateContent"
-
     private val executor = Executors.newSingleThreadExecutor()
 
-    fun hasApiKey(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_API, null)?.isNotBlank() == true
+    const val MODEL_FILE = "Qwen3-1.7B-Q4_K_M.gguf"
+    const val MODEL_SIZE_BYTES = 1_282_439_264L
 
-    fun setApiKey(context: Context, apiKey: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putString(KEY_API, apiKey.trim()).apply()
+    private const val MODEL_URL =
+        "https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf?download=true"
+
+    private const val PREFS = "local_ai"
+    private const val DOWNLOAD_ID = "download_id"
+
+    private const val SYSTEM_PROMPT = """
+        तुम Malaram Personal Assistant के Local AI Brain हो।
+        उपयोगकर्ता मुख्यतः हिंदी में बात करता है।
+        सरल, प्राकृतिक और संक्षिप्त हिंदी में उत्तर दो।
+        फोन action के लिए अनुमान लगाकर संवेदनशील काम मत करो।
+        भुगतान, OTP, पासवर्ड, खरीद, deletion और account changes में पुष्टि जरूरी है।
+    """
+
+    fun modelFile(context: Context): File {
+        val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: context.filesDir
+        if (!dir.exists()) dir.mkdirs()
+        return File(dir, MODEL_FILE)
     }
 
-    fun clearApiKey(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().remove(KEY_API).apply()
+    fun isModelReady(context: Context): Boolean {
+        val file = modelFile(context)
+        return file.exists() && file.length() == MODEL_SIZE_BYTES
+    }
+
+    fun startModelDownload(context: Context): Long {
+        if (isModelReady(context)) return 0L
+
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val oldId = prefs.getLong(DOWNLOAD_ID, -1L)
+
+        if (oldId != -1L) {
+            val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            manager.query(DownloadManager.Query().setFilterById(oldId)).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val status = cursor.getInt(
+                        cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)
+                    )
+                    if (status == DownloadManager.STATUS_PENDING ||
+                        status == DownloadManager.STATUS_RUNNING
+                    ) return oldId
+                }
+            }
+        }
+
+        val file = modelFile(context)
+        if (file.exists() && file.length() != MODEL_SIZE_BYTES) file.delete()
+
+        val request = DownloadManager.Request(Uri.parse(MODEL_URL))
+            .setTitle("Malaram Assistant • Local AI")
+            .setDescription("Qwen3 1.7B model • लगभग 1.28 GB")
+            .setAllowedNetworkTypes(
+                DownloadManager.Request.NETWORK_WIFI or
+                    DownloadManager.Request.NETWORK_MOBILE
+            )
+            .setNotificationVisibility(
+                DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+            )
+            .setDestinationInExternalFilesDir(
+                context,
+                Environment.DIRECTORY_DOWNLOADS,
+                MODEL_FILE
+            )
+
+        val id = (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager)
+            .enqueue(request)
+
+        prefs.edit().putLong(DOWNLOAD_ID, id).apply()
+        return id
+    }
+
+    fun downloadStatus(context: Context): String {
+        if (isModelReady(context)) return "Local Qwen3 AI तैयार है।"
+
+        val id = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getLong(DOWNLOAD_ID, -1L)
+        if (id == -1L) return "Local AI model अभी डाउनलोड नहीं हुआ है।"
+
+        val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        manager.query(DownloadManager.Query().setFilterById(id)).use { cursor ->
+            if (!cursor.moveToFirst()) return "Local AI download शुरू नहीं हुआ।"
+
+            val status = cursor.getInt(
+                cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)
+            )
+            val downloaded = cursor.getLong(
+                cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+            )
+            val total = cursor.getLong(
+                cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+            )
+
+            return when (status) {
+                DownloadManager.STATUS_PENDING -> "Local AI download queue में है…"
+                DownloadManager.STATUS_RUNNING -> {
+                    if (total > 0) {
+                        "Local AI डाउनलोड हो रहा है… " +
+                            (downloaded / 1_000_000) + " / " +
+                            (total / 1_000_000) + " MB"
+                    } else {
+                        "Local AI डाउनलोड हो रहा है…"
+                    }
+                }
+                DownloadManager.STATUS_SUCCESSFUL ->
+                    if (isModelReady(context)) "Local Qwen3 AI तैयार है।"
+                    else "Download पूरा हुआ, लेकिन model verify नहीं हुआ।"
+                DownloadManager.STATUS_FAILED ->
+                    "Local AI download fail हुआ। फिर से डाउनलोड करें।"
+                else -> "Local AI download स्थिति: " + status
+            }
+        }
+    }
+
+    private suspend fun loadModel(context: Context): dev.ffmpegkit.llama.LlamaModel {
+        if (!isModelReady(context)) {
+            throw IllegalStateException(
+                "Local Qwen3 model अभी तैयार नहीं है। पहले Local AI model डाउनलोड करें।"
+            )
+        }
+
+        return Llama.loadModel(
+            modelPath = modelFile(context).absolutePath,
+            config = LlamaConfig(
+                contextSize = 4096,
+                threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 6),
+                gpuLayers = 0,
+                temperature = 0.2f,
+                topP = 0.9f,
+                topK = 20
+            )
+        )
     }
 
     fun ask(context: Context, userText: String, callback: (String) -> Unit) {
-        val key = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_API, null)?.trim()
-
-        if (key.isNullOrBlank()) {
-            callback("AI Brain अभी सेट नहीं है। पहले AI Brain में Gemini API key जोड़ें।")
-            return
-        }
-
         executor.execute {
             val answer = try {
-                request(key, userText)
+                runBlocking {
+                    val model = loadModel(context)
+                    try {
+                        Llama.complete(
+                            model,
+                            prompt = userText,
+                            systemPrompt = SYSTEM_PROMPT,
+                            maxTokens = 256
+                        ).text
+                    } finally {
+                        Llama.releaseModel(model)
+                    }
+                }
             } catch (e: Exception) {
-                "AI से जवाब नहीं मिल पाया: " + (e.message ?: "network error")
+                "Local AI से जवाब नहीं मिल पाया: " + (e.message ?: "अज्ञात त्रुटि")
             }
 
             Handler(Looper.getMainLooper()).post { callback(answer) }
@@ -55,176 +178,117 @@ object AiBrain {
     }
 
     fun runAgent(context: Context, task: String, callback: (String) -> Unit) {
-        val key = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_API, null)?.trim()
-
-        if (key.isNullOrBlank()) {
-            callback("Agent के लिए पहले AI Brain में Gemini API key जोड़ें।")
-            return
-        }
-
         executor.execute {
-            val history = mutableListOf<String>()
-            var finalText = "मैं यह काम पूरा नहीं कर पाया."
+            var finalText = "मैं यह काम पूरा नहीं कर पाया।"
 
             try {
-                for (stepIndex in 0 until 8) {
-                    val screen = AssistantAccessibilityService.readScreen()
-                    val prompt = """
-                        उपयोगकर्ता का पूरा काम:
-                        ${task}
+                runBlocking {
+                    val model = loadModel(context)
+                    try {
+                        val history = mutableListOf<String>()
 
-                        अभी फोन की स्क्रीन Accessibility tree से:
-                        ${screen.ifBlank { "(स्क्रीन का टेक्स्ट उपलब्ध नहीं है)" }}
+                        for (stepIndex in 0 until 8) {
+                            val screen = AssistantAccessibilityService.readScreen()
+                            val prompt = """
+                                /no_think
+                                उपयोगकर्ता का पूरा काम:
+                                """ + task + """
 
-                        अब तक के कदम:
-                        ${history.joinToString("\n").ifBlank { "(कोई कदम नहीं)" }}
+                                अभी फोन की स्क्रीन Accessibility tree से:
+                                """ + screen.ifBlank {
+                                    "(स्क्रीन का टेक्स्ट उपलब्ध नहीं है)"
+                                } + """
 
-                        तुम फोन-agent हो। केवल अगला एक atomic action चुनो।
-                        JSON के अलावा कुछ मत लिखो।
-                        Schema:
-                        {"action":"open_app|click|type|enter|back|swipe_up|swipe_down|wait|done|answer","argument":"..."}
-                        नियम:
-                        - ऐप का नाम देखकर केवल ऐप खोलकर मत रुकना; उपयोगकर्ता का पूरा लक्ष्य पूरा करो।
-                        - स्क्रीन में दिख रहे text/content-description को click के argument में इस्तेमाल करो।
-                        - search के लिए click, फिर type, फिर enter जैसे छोटे कदम दो।
-                        - जब लक्ष्य वास्तव में पूरा हो जाए तो done दो।
-                        - यदि Accessibility service उपलब्ध नहीं है या स्क्रीन पढ़ी नहीं जा रही है तो answer में स्पष्ट कारण दो।
-                    """.trimIndent()
+                                अब तक के कदम:
+                                """ + history.joinToString("\n").ifBlank {
+                                    "(कोई कदम नहीं)"
+                                } + """
 
-                    val raw = request(key, prompt)
-                    val jsonText = raw.substringAfter("{", raw).substringBeforeLast("}", raw).trim()
-                    val obj = JSONObject(jsonText)
+                                तुम फोन-agent हो। केवल अगला एक atomic action चुनो।
+                                JSON के अलावा कुछ मत लिखो।
+                                Schema:
+                                {"action":"open_app|click|type|enter|back|swipe_up|swipe_down|wait|done|answer","argument":"..."}
 
-                    // Gemini must return action as a JSON string, not a nested object.
-                    // Be defensive so one malformed model response cannot crash the agent.
-                    val actionValue = obj.opt("action")
-                    val action = when (actionValue) {
-                        is String -> actionValue.trim().lowercase()
-                        is JSONObject -> actionValue.optString("value", actionValue.optString("name")).trim().lowercase()
-                        else -> ""
-                    }
-                    val argumentValue = obj.opt("argument")
-                    val argument = when (argumentValue) {
-                        is String -> argumentValue.trim()
-                        JSONObject.NULL -> ""
-                        null -> ""
-                        else -> argumentValue.toString().trim()
-                    }
+                                नियम:
+                                - ऐप का नाम देखकर केवल ऐप खोलकर मत रुकना; पूरा लक्ष्य पूरा करो।
+                                - स्क्रीन में दिख रहे text/content-description को click के argument में इस्तेमाल करो।
+                                - search के लिए click, फिर type, फिर enter जैसे छोटे कदम दो।
+                                - लक्ष्य वास्तव में पूरा हो जाए तभी done दो।
+                                - Accessibility उपलब्ध नहीं है या स्क्रीन पढ़ी नहीं जा रही है तो answer में स्पष्ट कारण दो।
+                                - action हमेशा JSON string होना चाहिए।
+                            """.trimIndent()
 
-                    if (action.isBlank()) {
-                        finalText = "Agent ने सही action format नहीं दिया।"
-                        break
-                    }
+                            val raw = Llama.complete(
+                                model,
+                                prompt = prompt,
+                                systemPrompt = SYSTEM_PROMPT,
+                                maxTokens = 180
+                            ).text
 
-                    when (action) {
-                        "done" -> {
-                            finalText = if (argument.isNotBlank()) argument else "काम पूरा हो गया।"
-                            break
+                            val jsonText = raw
+                                .substringAfter("{", raw)
+                                .substringBeforeLast("}", raw)
+                                .trim()
+
+                            val obj = JSONObject(jsonText)
+                            val actionValue = obj.opt("action")
+                            val action = when (actionValue) {
+                                is String -> actionValue.trim().lowercase()
+                                is JSONObject -> actionValue
+                                    .optString("value", actionValue.optString("name"))
+                                    .trim().lowercase()
+                                else -> ""
+                            }
+
+                            val argumentValue = obj.opt("argument")
+                            val argument = when (argumentValue) {
+                                is String -> argumentValue.trim()
+                                JSONObject.NULL -> ""
+                                null -> ""
+                                else -> argumentValue.toString().trim()
+                            }
+
+                            if (action.isBlank()) {
+                                finalText = "Local Agent ने सही action format नहीं दिया।"
+                                break
+                            }
+
+                            when (action) {
+                                "done" -> {
+                                    finalText = argument.ifBlank { "काम पूरा हो गया।" }
+                                    break
+                                }
+                                "answer" -> {
+                                    finalText = argument.ifBlank {
+                                        "मैं यह काम पूरा नहीं कर पाया।"
+                                    }
+                                    break
+                                }
+                                "wait" -> {
+                                    Thread.sleep(900)
+                                    history += "wait"
+                                }
+                                else -> {
+                                    val result = CommandEngine.executeAgentAction(
+                                        context,
+                                        action,
+                                        argument
+                                    )
+                                    history += action + " -> " + result
+                                    finalText = result
+                                    Thread.sleep(900)
+                                }
+                            }
                         }
-                        "answer" -> {
-                            finalText = argument.ifBlank { "मैं यह काम पूरा नहीं कर पाया।" }
-                            break
-                        }
-                        "wait" -> {
-                            Thread.sleep(900)
-                            history += "wait"
-                        }
-                        else -> {
-                            val result = CommandEngine.executeAgentAction(context, action, argument)
-                            history += "$action -> $result"
-                            Thread.sleep(900)
-                            finalText = result
-                        }
+                    } finally {
+                        Llama.releaseModel(model)
                     }
                 }
             } catch (e: Exception) {
-                finalText = "Agent रुक गया: " + (e.message ?: "अज्ञात त्रुटि")
+                finalText = "Local Agent रुक गया: " + (e.message ?: "अज्ञात त्रुटि")
             }
 
             Handler(Looper.getMainLooper()).post { callback(finalText) }
-        }
-    }
-
-    private fun request(apiKey: String, userText: String): String {
-        val connection = (URL(ENDPOINT).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 20_000
-            readTimeout = 60_000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("x-goog-api-key", apiKey)
-        }
-
-        val system = """
-            तुम Malaram Personal Assistant के AI Brain हो।
-            उपयोगकर्ता मुख्यतः हिंदी में बात करता है।
-            सरल और प्राकृतिक हिंदी में उत्तर दो।
-            उपयोगी उत्तर दो, अनावश्यक लंबाई मत बढ़ाओ।
-            फोन action के लिए अनुमान लगाकर संवेदनशील काम मत करो।
-            भुगतान, OTP, पासवर्ड, खरीद, deletion और account changes में पुष्टि जरूरी है।
-        """.trimIndent()
-
-        val body = JSONObject()
-            .put(
-                "system_instruction",
-                JSONObject().put(
-                    "parts",
-                    JSONArray().put(JSONObject().put("text", system))
-                )
-            )
-            .put(
-                "contents",
-                JSONArray().put(
-                    JSONObject()
-                        .put("role", "user")
-                        .put(
-                            "parts",
-                            JSONArray().put(JSONObject().put("text", userText))
-                        )
-                )
-            )
-            .put(
-                "generationConfig",
-                JSONObject()
-                    .put("maxOutputTokens", 700)
-                    .put(
-                        "thinkingConfig",
-                        JSONObject().put("thinkingLevel", "low")
-                    )
-            )
-
-        connection.outputStream.use {
-            it.write(body.toString().toByteArray(Charsets.UTF_8))
-        }
-
-        val code = connection.responseCode
-        val input = if (code in 200..299) connection.inputStream else connection.errorStream
-        val response = BufferedReader(
-            InputStreamReader(input, Charsets.UTF_8)
-        ).use { it.readText() }
-        connection.disconnect()
-
-        if (code !in 200..299) {
-            throw IllegalStateException("HTTP " + code)
-        }
-
-        val candidates = JSONObject(response).optJSONArray("candidates")
-            ?: throw IllegalStateException("AI ने कोई उत्तर नहीं दिया")
-
-        val parts = candidates.optJSONObject(0)
-            ?.optJSONObject("content")
-            ?.optJSONArray("parts")
-            ?: throw IllegalStateException("AI response खाली है")
-
-        val out = StringBuilder()
-        for (i in 0 until parts.length()) {
-            val text = parts.optJSONObject(i)?.optString("text").orEmpty()
-            if (text.isNotBlank()) out.append(text)
-        }
-
-        return out.toString().trim().ifBlank {
-            "AI ने कोई स्पष्ट उत्तर नहीं दिया।"
         }
     }
 }
