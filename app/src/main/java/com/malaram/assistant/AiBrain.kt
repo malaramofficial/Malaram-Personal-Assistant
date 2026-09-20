@@ -55,7 +55,7 @@ object AiBrain {
             .putString(KEY_ENDPOINT, endpoint.trim().ifBlank { DEFAULT_ENDPOINT })
             .putString(KEY_MODEL, model.trim().ifBlank { DEFAULT_MODEL })
         if (apiKey.isNotBlank()) saveApiKey(apiKey.trim())
-        pendingApiKey?.let { prefs.putString(KEY_API, it) }\n        pendingApiKey = null\n        prefs.apply()
+        pendingApiKey?.let { prefs.putString(KEY_API, it)\n        pendingApiKey = null\n        prefs.apply()
     }
 
     private fun key(): SecretKey {
