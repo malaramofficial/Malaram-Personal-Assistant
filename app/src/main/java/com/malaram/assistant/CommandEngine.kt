@@ -30,8 +30,17 @@ object CommandEngine {
         val plan = AgentPlanner.plan(raw)
         if (plan.isNotEmpty()) return Result(executePlan(plan))
 
+        // Common searches are deterministic; do them immediately without the local LLM.
+        if ((text.contains("youtube") || text.contains("यूट्यूब")) && looksLikeSearch(text)) {
+            return Result(searchYouTube(context, raw))
+        }
+        if (text.contains("गूगल") || text.contains("google") || text.startsWith("सर्च") || text.contains("खोजो")) {
+            val query = extractSearchQuery(raw)
+            if (query.isNotBlank()) return Result(searchGoogle(context, query))
+        }
+
         if (isCompoundAppTask(text)) {
-            return Result("मैं पूरे काम को समझकर चरण-दर-चरण कर रहा हूँ।", needsAgent = true)
+            return Result("ठीक है, अभी काम कर रहा हूँ।", needsAgent = true)
         }
 
         return when {
@@ -54,6 +63,34 @@ object CommandEngine {
                 Result("ठीक है, रुक गया।")
             else -> Result("मैंने सुना: $raw।", needsAi = true)
         }
+    }
+
+    private fun looksLikeSearch(text: String): Boolean =
+        listOf("खोज", "सर्च", "ढूंढ", "ढूँढ", "search", "वीडियो").any { text.contains(it) }
+
+    private fun extractSearchQuery(raw: String): String {
+        var q = raw
+        listOf("गूगल", "google", "सर्च", "search", "खोजो", "खोज", "ढूंढो", "ढूँढो", "ढूंढ", "ढूँढ", "पर", "में")
+            .forEach { q = q.replace(it, " ", ignoreCase = true) }
+        return q.replace(Regex("\\s+"), " ").trim()
+    }
+
+    private fun searchYouTube(context: Context, raw: String): String {
+        var query = extractSearchQuery(raw)
+            .replace("youtube", "", true)
+            .replace("यूट्यूब", "")
+            .trim()
+        if (query.isBlank()) return openAppOrUrl(context, "com.google.android.youtube", "https://www.youtube.com", "YouTube खोल रहा हूँ।")
+        val launch = context.packageManager.getLaunchIntentForPackage("com.google.android.youtube")
+        if (launch != null) {
+            launch.action = Intent.ACTION_SEARCH
+            launch.putExtra("query", query)
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(launch)
+        } else {
+            launchUrl(context, "https://www.youtube.com/results?search_query=" + Uri.encode(query))
+        }
+        return "YouTube पर $query खोज रहा हूँ।"
     }
 
     private fun isCompoundAppTask(text: String): Boolean {
@@ -140,8 +177,7 @@ object CommandEngine {
         return "सेटिंग खोल रहा हूँ।"
     }
 
-    private fun searchGoogle(context: Context, raw: String): String {
-        val query = raw.replace("गूगल", "", true).replace("google", "", true).replace("सर्च", "", true).trim()
+    private fun searchGoogle(context: Context, query: String): String {
         if (query.isEmpty()) launchUrl(context, "https://www.google.com")
         else launchUrl(context, "https://www.google.com/search?q=" + Uri.encode(query))
         return if (query.isEmpty()) "गूगल खोल रहा हूँ।" else "$query खोज रहा हूँ।"
