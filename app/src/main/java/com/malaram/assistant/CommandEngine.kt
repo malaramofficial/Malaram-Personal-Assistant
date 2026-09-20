@@ -16,6 +16,10 @@ object CommandEngine {
         val text = raw.trim().lowercase()
         val pending = ConfirmationManager.getPending(context)
         if (pending != null && !allowConfirmedSensitive) {
+            if (ConfirmationManager.isCancel(text)) {
+                ConfirmationManager.clear(context)
+                return Result("ठीक है, मैंने वह संवेदनशील काम रद्द कर दिया।")
+            }
             if (ConfirmationManager.isConfirm(text)) {
                 ConfirmationManager.clear(context)
                 return Result(
