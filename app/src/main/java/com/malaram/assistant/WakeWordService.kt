@@ -40,9 +40,6 @@ class WakeWordService : Service() {
         private const val ENCODER_FILE = "wakeword/encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
         private const val DECODER_FILE = "wakeword/decoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
         private const val JOINER_FILE = "wakeword/joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
-        // Diagnostic stage 2: prove Sherpa native KWS model initialization separately.
-        // Do NOT start AudioRecord yet. This isolates model/native initialization first.
-        private const val DIAGNOSTIC_STAGE = 2
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -50,8 +47,8 @@ class WakeWordService : Service() {
     private var stream: OnlineStream? = null
     private var recorder: AudioRecord? = null
     private var recordingThread: Thread? = null
-    private var wakeListening = false
-    private var waitingCommand = false
+    @Volatile private var wakeListening = false
+    @Volatile private var waitingCommand = false
     private var speechRecognizer: SpeechRecognizer? = null
     private lateinit var tts: HindiFemaleTts
     private lateinit var fallbackSpeaker: AssistantSpeaker
@@ -60,12 +57,10 @@ class WakeWordService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification("Assistant शुरू हो रहा है…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-        if (DIAGNOSTIC_STAGE == 1) {
-            updateNotification("DIAGNOSTIC 2: loading Sherpa KWS; microphone not started")
-            return
-        }
-
+        ServiceCompat.startForeground(
+            this, NOTIFICATION_ID, notification("Assistant शुरू हो रहा है…"),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        )
         tts = HindiFemaleTts(this)
         fallbackSpeaker = AssistantSpeaker(this)
         tts.prepare(
@@ -79,12 +74,13 @@ class WakeWordService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) { stopSelf(); return START_NOT_STICKY }
-        if (DIAGNOSTIC_STAGE == 2) {
-            updateNotification(if (kws != null) "DIAGNOSTIC 2 PASS: Sherpa KWS loaded; microphone not started" else "DIAGNOSTIC 2 FAIL: Sherpa KWS did not load")
+        if (intent?.action == ACTION_STOP) {
+            stopSelf()
             return START_NOT_STICKY
         }
-        startWakeListening()
+        if (intent?.action == ACTION_START || intent == null) {
+            startWakeListening()
+        }
         return START_STICKY
     }
 
@@ -95,33 +91,56 @@ class WakeWordService : Service() {
                 config = KeywordSpotterConfig(
                     featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = 80),
                     modelConfig = OnlineModelConfig(
-                        transducer = OnlineTransducerModelConfig(encoder = ENCODER_FILE, decoder = DECODER_FILE, joiner = JOINER_FILE),
-                        tokens = TOKENS_FILE, numThreads = 1, debug = false, provider = "cpu", modelType = "zipformer"
+                        transducer = OnlineTransducerModelConfig(
+                            encoder = ENCODER_FILE, decoder = DECODER_FILE, joiner = JOINER_FILE
+                        ),
+                        tokens = TOKENS_FILE, numThreads = 1, debug = false,
+                        provider = "cpu", modelType = "zipformer"
                     ),
-                    keywordsFile = KEYWORD_FILE, keywordsScore = 1.0f, keywordsThreshold = 0.25f, numTrailingBlanks = 1
+                    keywordsFile = KEYWORD_FILE, keywordsScore = 1.0f,
+                    keywordsThreshold = 0.25f, numTrailingBlanks = 1
                 )
             )
-            updateNotification("DIAGNOSTIC 2 PASS: Sherpa KWS loaded; microphone not started")
+            updateNotification("Wake word model तैयार है।")
         } catch (e: Exception) {
             Log.e("MalaramWakeWord", "KWS init failed", e)
-            updateNotification("DIAGNOSTIC 2 FAIL: Sherpa KWS model init failed")
+            updateNotification("Wake word model लोड नहीं हुआ।")
         }
     }
 
     private fun startWakeListening() {
         if (wakeListening || waitingCommand) return
+        if (kws == null) {
+            updateNotification("Wake word model उपलब्ध नहीं है।")
+            return
+        }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            updateNotification("Microphone permission जरूरी है।"); return
+            updateNotification("Microphone permission जरूरी है।")
+            return
         }
         val spotter = kws ?: return
         try {
-            val min = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+            val min = AudioRecord.getMinBufferSize(
+                SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
+            )
             if (min <= 0) return
-            recorder = AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, min * 2)
-            if (recorder?.state != AudioRecord.STATE_INITIALIZED) { cleanupAudio(); updateNotification("Microphone शुरू नहीं हो सका।"); return }
+            recorder = AudioRecord(
+                MediaRecorder.AudioSource.MIC, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT, maxOf(min * 2, SAMPLE_RATE / 2)
+            )
+            if (recorder?.state != AudioRecord.STATE_INITIALIZED) {
+                cleanupAudio()
+                updateNotification("Microphone शुरू नहीं हो सका।")
+                return
+            }
             stream?.release()
             stream = spotter.createStream()
             recorder?.startRecording()
+            if (recorder?.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                cleanupAudio()
+                updateNotification("Microphone recording शुरू नहीं हुई।")
+                return
+            }
             wakeListening = true
             updateNotification("“Hello Assistant” standby में है।")
             recordingThread = Thread {
@@ -160,8 +179,9 @@ class WakeWordService : Service() {
         if (!waitingCommand) return
         try {
             speechRecognizer?.destroy()
-            speechRecognizer = if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(this))
-                SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
+            speechRecognizer = if (
+                Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)
+            ) SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
             else SpeechRecognizer.createSpeechRecognizer(this)
 
             speechRecognizer?.setRecognitionListener(object : RecognitionListener {
@@ -191,38 +211,46 @@ class WakeWordService : Service() {
     }
 
     private fun executeCommand(heard: String) {
-        val result = try { CommandEngine.executeResult(this, heard) }
-        catch (e: Exception) { Log.e("MalaramWakeWord", "Command failed", e); CommandEngine.Result("इस आदेश को पूरा करते समय त्रुटि हुई।") }
+        val result = try {
+            CommandEngine.executeResult(this, heard)
+        } catch (e: Exception) {
+            Log.e("MalaramWakeWord", "Command failed", e)
+            CommandEngine.Result("इस आदेश को पूरा करते समय त्रुटि हुई।")
+        }
         CommandHistory(this).add(heard, result.text)
-        if (result.needsAgent) {
-            updateNotification("AI agent स्क्रीन समझ रहा है…")
-            finishCommand(result.text)
-            AiBrain.runAgent(this, heard) { answer ->
-                CommandHistory(this).add(heard, answer)
-                if (ttsReady) tts.speak(answer) else fallbackSpeaker.speak(answer)
-                updateNotification("“Hello Assistant” standby में है।")
+
+        when {
+            result.needsAgent -> {
+                updateNotification("AI agent स्क्रीन समझ रहा है…")
+                AiBrain.runAgent(this, heard) { answer ->
+                    CommandHistory(this).add(heard, answer)
+                    finishCommand(answer)
+                }
             }
-        } else if (result.needsAi) {
-            updateNotification("AI सोच रहा है…")
-            AiBrain.ask(this, heard) { answer ->
-                CommandHistory(this).add(heard, answer)
-                finishCommand(answer)
+            result.needsAi -> {
+                updateNotification("AI सोच रहा है…")
+                AiBrain.ask(this, heard) { answer ->
+                    CommandHistory(this).add(heard, answer)
+                    finishCommand(answer)
+                }
             }
-        } else finishCommand(result.text)
+            else -> finishCommand(result.text)
+        }
     }
 
     private fun finishCommand(response: String) {
         speechRecognizer?.destroy()
         speechRecognizer = null
+        waitingCommand = false
         if (response.isNotBlank()) {
             if (ttsReady) tts.speak(response) else fallbackSpeaker.speak(response)
         }
-        waitingCommand = false
         updateNotification("“Hello Assistant” standby में है।")
         handler.postDelayed({ if (!waitingCommand) startWakeListening() }, 1800L)
     }
 
     private fun cleanupAudio() {
+        wakeListening = false
         try { recorder?.stop() } catch (_: Exception) {}
         try { recorder?.release() } catch (_: Exception) {}
         recorder = null
@@ -232,8 +260,10 @@ class WakeWordService : Service() {
     }
 
     private fun notification(text: String): Notification =
-        Notification.Builder(this, CHANNEL_ID).setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("Malaram Personal Assistant").setContentText(text).setOngoing(true)
+        Notification.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle("Malaram Personal Assistant")
+            .setContentText(text).setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE).build()
 
     private fun updateNotification(text: String) {
@@ -241,9 +271,11 @@ class WakeWordService : Service() {
     }
 
     private fun createChannel() {
-        if (Build.VERSION.SDK_INT >= 26) getSystemService(NotificationManager::class.java)?.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Assistant Wake Word", NotificationManager.IMPORTANCE_LOW)
-        )
+        if (Build.VERSION.SDK_INT >= 26) {
+            getSystemService(NotificationManager::class.java)?.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "Assistant Wake Word", NotificationManager.IMPORTANCE_LOW)
+            )
+        }
     }
 
     override fun onDestroy() {
@@ -255,10 +287,8 @@ class WakeWordService : Service() {
         cleanupAudio()
         try { kws?.release() } catch (_: Exception) {}
         kws = null
-        if (DIAGNOSTIC_STAGE != 2) {
-            tts.shutdown()
-            fallbackSpeaker.shutdown()
-        }
+        tts.shutdown()
+        fallbackSpeaker.shutdown()
         super.onDestroy()
     }
 
