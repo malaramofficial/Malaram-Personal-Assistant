@@ -249,6 +249,23 @@ class WakeWordService : Service() {
         handler.postDelayed({ if (!waitingCommand) startWakeListening() }, 1800L)
     }
 
+    private fun scheduleWakeRestart() {
+        handler.removeCallbacksAndMessages(null)
+        val restart = object : Runnable {
+            private var attempts = 0
+            override fun run() {
+                if (waitingCommand) return
+                if (!ttsReady || !tts.isSpeaking() || attempts >= 20) {
+                    startWakeListening()
+                    return
+                }
+                attempts++
+                handler.postDelayed(this, 500L)
+            }
+        }
+        handler.post(restart)
+    }
+
     private fun cleanupAudio() {
         wakeListening = false
         try { recorder?.stop() } catch (_: Exception) {}
