@@ -120,13 +120,19 @@ object CommandEngine {
 
     private fun openNamedApp(context: Context, name: String): String {
         val n = name.trim().lowercase()
-        val packageName = when {
+        val knownPackage = when {
             n.contains("youtube") || n.contains("यूट्यूब") -> "com.google.android.youtube"
             n.contains("whatsapp") || n.contains("व्हाट्सऐप") || n.contains("व्हाट्सएप") -> "com.whatsapp"
             n.contains("chrome") || n.contains("ब्राउज़र") || n.contains("ब्राउजर") -> "com.android.chrome"
-            else -> return "ऐप पहचान नहीं पाया"
+            else -> null
         }
-        val launch = context.packageManager.getLaunchIntentForPackage(packageName) ?: return "ऐप फोन में नहीं मिला"
+        val packageName = knownPackage ?: context.packageManager.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+            .firstOrNull { app ->
+                val label = context.packageManager.getApplicationLabel(app).toString().lowercase()
+                label == n || label.contains(n) || n.contains(label)
+            }?.packageName
+            ?: return "ऐप नहीं मिला"
+        val launch = context.packageManager.getLaunchIntentForPackage(packageName) ?: return "ऐप फोन में launch नहीं हो सका"
         context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         return "ऐप खोला"
     }
