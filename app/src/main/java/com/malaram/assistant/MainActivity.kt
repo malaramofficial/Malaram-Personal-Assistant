@@ -97,12 +97,12 @@ class MainActivity : Activity() {
         }
         val endpoint = EditText(this).apply {
             hint = "OpenAI-compatible endpoint"
-            setText(AiBrain.configuredEndpoint(this))
+            setText(AiBrain.configuredEndpoint(this@MainActivity))
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
         }
         val model = EditText(this).apply {
             hint = "Model name"
-            setText(AiBrain.configuredModel(this))
+            setText(AiBrain.configuredModel(this@MainActivity))
         }
         val apiKey = EditText(this).apply {
             hint = "API key"
