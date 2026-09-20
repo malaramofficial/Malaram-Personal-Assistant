@@ -39,4 +39,5 @@ dependencies {
     implementation("org.apache.commons:commons-compress:1.27.1")
     implementation("dev.ffmpegkit-maintained:llama-android:0.1.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    testImplementation("junit:junit:4.13.2")
 }
