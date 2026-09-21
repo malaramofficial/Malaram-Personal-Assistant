@@ -129,13 +129,21 @@ object AiBrain {
 
     fun providerStatus(context: Context): String {
         val p = prefs(context).getString(KEY_PROVIDER, PROVIDER_REMOTE) ?: PROVIDER_REMOTE
-        return if (p == PROVIDER_LOCAL) {
-            if (isModelReady(context)) "Local AI: Qwen3 0.6B तैयार है।" else "Local AI चुना है, लेकिन model डाउनलोड नहीं हुआ।"
-        } else {
-            val endpoint = prefs(context).getString(KEY_ENDPOINT, DEFAULT_ENDPOINT).orEmpty()
-            val model = prefs(context).getString(KEY_MODEL, DEFAULT_MODEL).orEmpty()
-            val key = readApiKey(context)
-            if (key.isBlank()) "Remote AI configured नहीं है। API key सेट करें।" else "Remote AI: $model • $endpoint"
+        return when (p) {
+            PROVIDER_LOCAL -> {
+                if (isModelReady(context)) "Local AI: Qwen3 0.6B तैयार है।" else "Local AI चुना है, लेकिन model डाउनलोड नहीं हुआ।"
+            }
+            PROVIDER_TERMUX -> {
+                val endpoint = prefs(context).getString(KEY_ENDPOINT, "http://127.0.0.1:8080").orEmpty()
+                val model = prefs(context).getString(KEY_MODEL, "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf").orEmpty()
+                "Termux Local AI: $model • $endpoint"
+            }
+            else -> {
+                val endpoint = prefs(context).getString(KEY_ENDPOINT, DEFAULT_ENDPOINT).orEmpty()
+                val model = prefs(context).getString(KEY_MODEL, DEFAULT_MODEL).orEmpty()
+                val key = readApiKey(context)
+                if (key.isBlank()) "Remote AI configured नहीं है। API key सेट करें।" else "Remote AI: $model • $endpoint"
+            }
         }
     }
 
@@ -211,6 +219,11 @@ object AiBrain {
     private fun provider(context: Context): LlmProvider {
         val p = prefs(context).getString(KEY_PROVIDER, PROVIDER_REMOTE) ?: PROVIDER_REMOTE
         if (p == PROVIDER_LOCAL) return localProvider(context)
+        if (p == PROVIDER_TERMUX) {
+            val endpoint = prefs(context).getString(KEY_ENDPOINT, "http://127.0.0.1:8080") ?: "http://127.0.0.1:8080"
+            val model = prefs(context).getString(KEY_MODEL, "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf") ?: "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
+            return OpenAiCompatibleProvider(endpoint, "", model)
+        }
         val key = readApiKey(context)
         if (key.isBlank()) throw IllegalStateException("AI provider सेट नहीं है। AI Settings में API key डालें।")
         return OpenAiCompatibleProvider(prefs(context).getString(KEY_ENDPOINT, DEFAULT_ENDPOINT) ?: DEFAULT_ENDPOINT, key, prefs(context).getString(KEY_MODEL, DEFAULT_MODEL) ?: DEFAULT_MODEL)
