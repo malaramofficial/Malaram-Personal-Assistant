@@ -44,6 +44,7 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.listenButton).setOnClickListener { listen() }
         findViewById<Button>(R.id.testVoiceButton).setOnClickListener { speak("नमस्ते माला राम जी, मैं आपकी पर्सनल असिस्टेंट हूँ। बताइए, मैं आपके लिए क्या करूँ?") }
         findViewById<Button>(R.id.aiSettingsButton).setOnClickListener { showAiSettings() }
+        findViewById<Button>(R.id.termuxAiButton).setOnClickListener { useTermuxAi() }
         localAiButton.setOnClickListener { downloadOrCheckLocalAi() }
         findViewById<Button>(R.id.accessibilityButton).setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         findViewById<Button>(R.id.notificationButton).setOnClickListener { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) }
@@ -67,6 +68,16 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         updateLocalAiButton()
+    }
+
+    private fun useTermuxAi() {
+        try {
+            AiBrain.configureTermux(this)
+            status.text = AiBrain.providerStatus(this)
+            Toast.makeText(this, "Termux AI चुना गया। 127.0.0.1:8080 से test किया जाएगा।", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            status.text = "Termux AI सेट नहीं हुआ: " + (e.message ?: "अज्ञात त्रुटि")
+        }
     }
 
     private fun downloadOrCheckLocalAi() {
