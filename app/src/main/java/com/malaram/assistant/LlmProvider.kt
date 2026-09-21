@@ -30,7 +30,7 @@ class OpenAiCompatibleProvider(
         val connection = (URL(normalizeEndpoint(endpoint)).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 15_000
-            readTimeout = 60_000
+            readTimeout = 90_000
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             if (apiKey.isNotBlank()) setRequestProperty("Authorization", "Bearer $apiKey")
