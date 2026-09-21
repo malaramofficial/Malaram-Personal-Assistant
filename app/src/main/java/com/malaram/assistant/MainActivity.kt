@@ -73,8 +73,10 @@ class MainActivity : Activity() {
     private fun useTermuxAi() {
         try {
             AiBrain.configureTermux(this)
-            status.text = AiBrain.providerStatus(this)
-            Toast.makeText(this, "Termux AI चुना गया। 127.0.0.1:8080 से test किया जाएगा।", Toast.LENGTH_LONG).show()
+            status.text = "Termux Local AI चुना गया। 127.0.0.1:8080 से connection test हो रहा है…"
+            AiBrain.ask(this, "सिर्फ इतना छोटा उत्तर दो: TERMUX_OK") { answer ->
+                status.text = "Termux AI test response: $answer"
+            }
         } catch (e: Exception) {
             status.text = "Termux AI सेट नहीं हुआ: " + (e.message ?: "अज्ञात त्रुटि")
         }
