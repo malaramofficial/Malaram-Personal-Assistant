@@ -107,7 +107,7 @@ object AiBrain {
     fun configuredModel(context: Context): String =
         prefs(context).getString(KEY_MODEL, DEFAULT_MODEL) ?: DEFAULT_MODEL
 
-    fun configureTermux(context: Context, endpoint: String = "http://127.0.0.1:8080", model: String = "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf") {
+    fun configureTermux(context: Context, endpoint: String = "http://127.0.0.1:8080", model: String = "/data/data/com.termux/files/home/models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf") {
         val cleanEndpoint = endpoint.trim().ifBlank { "http://127.0.0.1:8080" }.trimEnd('/')
         val uri = Uri.parse(cleanEndpoint)
         require(uri.host == "127.0.0.1" || uri.host == "localhost") {
@@ -119,7 +119,7 @@ object AiBrain {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(KEY_PROVIDER, PROVIDER_TERMUX)
             .putString(KEY_ENDPOINT, cleanEndpoint)
-            .putString(KEY_MODEL, model.trim().ifBlank { "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf" })
+            .putString(KEY_MODEL, model.trim().ifBlank { "/data/data/com.termux/files/home/models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf" })
             .apply()
     }
 
@@ -135,7 +135,7 @@ object AiBrain {
             }
             PROVIDER_TERMUX -> {
                 val endpoint = prefs(context).getString(KEY_ENDPOINT, "http://127.0.0.1:8080").orEmpty()
-                val model = prefs(context).getString(KEY_MODEL, "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf").orEmpty()
+                val model = prefs(context).getString(KEY_MODEL, "/data/data/com.termux/files/home/models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf").orEmpty()
                 "Termux Local AI: $model • $endpoint"
             }
             else -> {
@@ -221,7 +221,7 @@ object AiBrain {
         if (p == PROVIDER_LOCAL) return localProvider(context)
         if (p == PROVIDER_TERMUX) {
             val endpoint = prefs(context).getString(KEY_ENDPOINT, "http://127.0.0.1:8080") ?: "http://127.0.0.1:8080"
-            val model = prefs(context).getString(KEY_MODEL, "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf") ?: "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
+            val model = prefs(context).getString(KEY_MODEL, "/data/data/com.termux/files/home/models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf") ?: "/data/data/com.termux/files/home/models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
             return OpenAiCompatibleProvider(endpoint, "", model)
         }
         val key = readApiKey(context)
