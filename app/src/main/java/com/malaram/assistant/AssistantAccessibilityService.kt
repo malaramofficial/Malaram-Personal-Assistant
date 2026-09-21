@@ -19,6 +19,8 @@ class AssistantAccessibilityService : AccessibilityService() {
         fun goBack() = instance?.performGlobalAction(GLOBAL_ACTION_BACK) == true
         fun goHome() = instance?.performGlobalAction(GLOBAL_ACTION_HOME) == true
         fun openRecents() = instance?.performGlobalAction(GLOBAL_ACTION_RECENTS) == true
+        fun openNotifications() = instance?.performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS) == true
+        fun openQuickSettings() = instance?.performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS) == true
 
         fun findText(text: String): AccessibilityNodeInfo? {
             val root = instance?.rootInActiveWindow ?: return null
@@ -33,6 +35,20 @@ class AssistantAccessibilityService : AccessibilityService() {
         }
 
         fun clickText(text: String): Boolean = findText(text)?.let { clickNodeOrParent(it) } == true
+        
+        fun clickViewId(viewId: String): Boolean {
+            val root = instance?.rootInActiveWindow ?: return false
+            return try {
+                root.findAccessibilityNodeInfosByViewId(viewId).firstOrNull()?.let { clickNodeOrParent(it) } == true
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        fun tap(x: Float, y: Float): Boolean = instance?.tapAt(x, y) == true
+
+        fun longTap(x: Float, y: Float): Boolean = instance?.longTapAt(x, y) == true
+
 
         fun longClickText(text: String): Boolean {
             val node = findText(text) ?: return false
@@ -100,13 +116,17 @@ class AssistantAccessibilityService : AccessibilityService() {
             val root = instance?.rootInActiveWindow ?: return ""
             val out = LinkedHashSet<String>()
             collectText(root, out)
-            return out.joinToString("\n").take(6000)
+            return out.joinToString("\n").take(7000)
         }
 
         private fun collectText(node: AccessibilityNodeInfo, out: MutableSet<String>) {
-            if (out.size >= 500) return
-            node.text?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let(out::add)
-            node.contentDescription?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let(out::add)
+            if (out.size >= 600) return
+            if (node.isPassword) {
+                out.add("[PASSWORD FIELD]")
+            } else {
+                node.text?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let(out::add)
+                node.contentDescription?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let(out::add)
+            }
             for (i in 0 until node.childCount) node.getChild(i)?.let { collectText(it, out) }
         }
 
@@ -172,6 +192,33 @@ class AssistantAccessibilityService : AccessibilityService() {
         return dispatchGesture(
             GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 450)).build(),
             null, null
+        )
+    }
+
+    private fun tapAt(x: Float, y: Float): Boolean {
+        if (Build.VERSION.SDK_INT < 24) return false
+        val dm = resources.displayMetrics
+        val px = if (x in 0f..1f) dm.widthPixels * x else x
+        val py = if (y in 0f..1f) dm.heightPixels * y else y
+        return dispatchTap(px, py, 80L)
+    }
+
+    private fun longTapAt(x: Float, y: Float): Boolean {
+        if (Build.VERSION.SDK_INT < 24) return false
+        val dm = resources.displayMetrics
+        val px = if (x in 0f..1f) dm.widthPixels * x else x
+        val py = if (y in 0f..1f) dm.heightPixels * y else y
+        return dispatchTap(px, py, 650L)
+    }
+
+    private fun dispatchTap(x: Float, y: Float, duration: Long): Boolean {
+        val path = Path().apply { moveTo(x, y) }
+        return dispatchGesture(
+            GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
+                .build(),
+            null,
+            null
         )
     }
 
