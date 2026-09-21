@@ -112,6 +112,9 @@ class AssistantAccessibilityService : AccessibilityService() {
             return hash
         }
 
+        fun activePackageName(): String =
+            instance?.rootInActiveWindow?.packageName?.toString().orEmpty()
+
         fun readScreen(): String {
             val root = instance?.rootInActiveWindow ?: return ""
             val out = LinkedHashSet<String>()
