@@ -14,7 +14,8 @@
         android:theme="@style/Theme.MalaramAssistant"
         android:label="Malaram Personal Assistant"
         android:allowBackup="true"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true">
 
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
