@@ -286,6 +286,28 @@ object CommandEngine {
         return "सेटिंग खोल रहा हूँ।"
     }
 
+    private fun openSettingsAction(context: Context, argument: String): String {
+        val key = argument.trim().lowercase()
+        val action = when {
+            key.contains("wifi") || key.contains("वाईफाई") -> Settings.ACTION_WIFI_SETTINGS
+            key.contains("bluetooth") || key.contains("ब्लूटूथ") -> Settings.ACTION_BLUETOOTH_SETTINGS
+            key.contains("display") || key.contains("डिस्प्ले") -> Settings.ACTION_DISPLAY_SETTINGS
+            key.contains("sound") || key.contains("आवाज़") || key.contains("ध्वनि") -> Settings.ACTION_SOUND_SETTINGS
+            key.contains("date") || key.contains("तारीख") || key.contains("समय") -> Settings.ACTION_DATE_SETTINGS
+            key.contains("language") || key.contains("भाषा") -> Settings.ACTION_LOCALE_SETTINGS
+            key.contains("storage") || key.contains("स्टोरेज") -> Settings.ACTION_INTERNAL_STORAGE_SETTINGS
+            key.contains("security") || key.contains("सुरक्षा") -> Settings.ACTION_SECURITY_SETTINGS
+            key.contains("location") || key.contains("लोकेशन") -> Settings.ACTION_LOCATION_SOURCE_SETTINGS
+            else -> Settings.ACTION_SETTINGS
+        }
+        return try {
+            context.startActivity(Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            "सेटिंग खोली।"
+        } catch (_: Exception) {
+            "यह सेटिंग स्क्रीन उपलब्ध नहीं है।"
+        }
+    }
+
     private fun searchGoogle(context: Context, query: String): String {
         if (query.isEmpty()) launchUrl(context, "https://www.google.com")
         else launchUrl(context, "https://www.google.com/search?q=" + Uri.encode(query))
