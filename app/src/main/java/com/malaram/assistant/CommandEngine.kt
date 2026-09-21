@@ -55,8 +55,8 @@ object CommandEngine {
             if (query.isNotBlank()) return Result(searchGoogle(context, query))
         }
 
-        if (isCompoundAppTask(text)) {
-            return Result("ठीक है, अभी काम कर रहा हूँ।", needsAgent = true)
+        if (looksLikeActionRequest(text)) {
+            return Result("ठीक है, मैं यह काम करने की कोशिश कर रहा हूँ।", needsAgent = true, agentTask = raw)
         }
 
         return when {
@@ -150,10 +150,39 @@ object CommandEngine {
             "open_app" -> openNamedApp(context, argument)
             "click" -> if (AssistantAccessibilityService.clickText(argument)) "क्लिक किया" else "लक्ष्य नहीं मिला"
             "type" -> if (AssistantAccessibilityService.setFocusedText(argument)) "टेक्स्ट लिखा" else "टेक्स्ट बॉक्स नहीं मिला"
-            "enter" -> if (AssistantAccessibilityService.pressEnter()) "एंटर किया" else "एंटर उपलब्ध नहीं"
+            "enter", "send" -> if (AssistantAccessibilityService.pressEnter()) "एंटर/भेजने का प्रयास किया" else "एंटर उपलब्ध नहीं"
             "back" -> if (AssistantAccessibilityService.goBack()) "वापस गया" else "Back उपलब्ध नहीं"
-            "swipe_up" -> if (AssistantAccessibilityService.instance?.swipeUp() == true) "ऊपर स्क्रोल किया" else "स्क्रोल नहीं हुआ"
-            "swipe_down" -> if (AssistantAccessibilityService.instance?.swipeDown() == true) "नीचे स्क्रोल किया" else "स्क्रोल नहीं हुआ"
+            "home" -> if (AssistantAccessibilityService.goHome()) "होम खोला" else "Home उपलब्ध नहीं"
+            "recents" -> if (AssistantAccessibilityService.openRecents()) "हाल के ऐप खोले" else "Recents उपलब्ध नहीं"
+            "notifications" -> if (AssistantAccessibilityService.openNotifications()) "नोटिफिकेशन खोले" else "नोटिफिकेशन उपलब्ध नहीं"
+            "quick_settings" -> if (AssistantAccessibilityService.openQuickSettings()) "Quick Settings खोली" else "Quick Settings उपलब्ध नहीं"
+            "swipe_up", "scroll_up" -> if (AssistantAccessibilityService.instance?.swipeUp() == true) "ऊपर स्क्रोल किया" else "स्क्रोल नहीं हुआ"
+            "swipe_down", "scroll_down" -> if (AssistantAccessibilityService.instance?.swipeDown() == true) "नीचे स्क्रोल किया" else "स्क्रोल नहीं हुआ"
+            "long_click" -> if (AssistantAccessibilityService.longClickText(argument)) "लंबा क्लिक किया" else "लक्ष्य नहीं मिला"
+            "click_desc", "click_text" -> if (AssistantAccessibilityService.clickText(argument)) "क्लिक किया" else "लक्ष्य नहीं मिला"
+            "click_id" -> if (AssistantAccessibilityService.clickViewId(argument)) "क्लिक किया" else "View ID नहीं मिला"
+            "clear" -> if (AssistantAccessibilityService.setFocusedText("")) "टेक्स्ट साफ किया" else "टेक्स्ट बॉक्स नहीं मिला"
+            "open_url", "url", "browser" -> if (argument.isBlank()) "URL खाली है" else try { launchUrl(context, argument); "URL खोला" } catch (_: Exception) { "URL नहीं खुला" }
+            "dial" -> try { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(argument))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); "डायलर खोला" } catch (_: Exception) { "डायलर नहीं खुला" }
+            "share" -> try {
+                context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, argument)
+                }, "Share").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                "Share खोला"
+            } catch (_: Exception) { "Share उपलब्ध नहीं है" }
+            "settings", "open_settings" -> openSettingsAction(context, argument)
+            "read_screen" -> AssistantAccessibilityService.readScreen().ifBlank { "स्क्रीन का टेक्स्ट नहीं पढ़ पाया" }
+            "screenshot" -> if (AssistantAccessibilityService.screenshotHash().isNotBlank()) "स्क्रीन की स्थिति पढ़ी" else "स्क्रीन उपलब्ध नहीं"
+            "tap" -> {
+                val p = argument.split(",").mapNotNull { it.trim().toFloatOrNull() }
+                if (p.size == 2 && AssistantAccessibilityService.tap(p[0], p[1])) "स्क्रीन पर टैप किया" else "टैप के निर्देश गलत हैं"
+            }
+            "long_tap" -> {
+                val p = argument.split(",").mapNotNull { it.trim().toFloatOrNull() }
+                if (p.size == 2 && AssistantAccessibilityService.longTap(p[0], p[1])) "स्क्रीन पर लंबा टैप किया" else "लंबा टैप नहीं हुआ"
+            }
+            "wait" -> { Thread.sleep(argument.toLongOrNull()?.coerceIn(100L, 5000L) ?: 500L); "थोड़ा इंतजार किया" }
             else -> "अज्ञात action"
         }
     }
@@ -222,6 +251,22 @@ object CommandEngine {
         return Result(if (AssistantAccessibilityService.setFocusedText(draft))
             "जवाब लिख दिया है। भेजने से पहले आपकी पुष्टि जरूरी है।"
         else "चैट का लिखने वाला बॉक्स नहीं मिला।")
+    }
+
+    private fun looksLikeActionRequest(text: String): Boolean {
+        val verbs = listOf(
+            "खोल", "खोलो", "खोलना", "चलाओ", "चालू", "बंद", "बन्द", "करो", "करना",
+            "भेज", "लिख", "लिखो", "डाल", "हटा", "डिलीट", "मिटा", "डाउनलोड", "अपलोड",
+            "इंस्टॉल", "अनइंस्टॉल", "कॉल", "फोन", "डायल", "सर्च", "खोज", "ढूंढ", "ढूँढ",
+            "स्क्रोल", "स्क्रॉल", "क्लिक", "टैप", "दबा", "सेलेक्ट", "चुन", "शेयर",
+            "फोटो", "वीडियो", "प्ले", "रोक", "पॉज", "पॉज़", "कैमरा", "स्क्रीनशॉट",
+            "सेट", "बदल", "बनाओ", "बनाना", "सेव", "सहेज", "कॉपी", "पेस्ट", "पढ़",
+            "read", "open", "start", "stop", "send", "type", "write", "delete", "remove",
+            "download", "upload", "install", "uninstall", "call", "dial", "search", "scroll",
+            "click", "tap", "select", "share", "play", "pause", "screenshot", "set", "change",
+            "save", "copy", "paste", "enable", "disable", "turn on", "turn off"
+        )
+        return verbs.any { text.contains(it) }
     }
 
     private fun isSensitive(text: String) =
