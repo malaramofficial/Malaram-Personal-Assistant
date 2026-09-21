@@ -172,9 +172,27 @@ object CommandEngine {
                 label == n || label.contains(n) || n.contains(label)
             }?.packageName
             ?: return "ऐप नहीं मिला"
-        val launch = context.packageManager.getLaunchIntentForPackage(packageName) ?: return "ऐप फोन में launch नहीं हो सका"
-        context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        return "ऐप खोला"
+
+        // Android 13+ can block package visibility from getLaunchIntentForPackage().
+        // getLaunchIntentSenderForPackage() is the visibility-safe API on API 33+.
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            return try {
+                val sender = context.packageManager.getLaunchIntentSenderForPackage(packageName)
+                sender.sendIntent(context, 0, null, null, null)
+                "ऐप खोला"
+            } catch (_: Exception) {
+                "ऐप फोन में launch नहीं हो सका"
+            }
+        }
+
+        val launch = context.packageManager.getLaunchIntentForPackage(packageName)
+            ?: return "ऐप फोन में launch नहीं हो सका"
+        return try {
+            context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            "ऐप खोला"
+        } catch (_: Exception) {
+            "ऐप फोन में launch नहीं हो सका"
+        }
     }
 
     fun execute(context: Context, raw: String): String = executeResult(context, raw).text
