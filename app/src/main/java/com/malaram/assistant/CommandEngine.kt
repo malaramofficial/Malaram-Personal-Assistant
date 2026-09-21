@@ -42,6 +42,10 @@ object CommandEngine {
         val plan = AgentPlanner.plan(raw)
         if (plan.isNotEmpty()) return Result(executePlan(plan))
 
+        if (isWhatsAppMessageIntent(text) && extractWhatsAppMessage(raw).isBlank()) {
+            return Result("मोनिका को क्या संदेश भेजना है?")
+        }
+
         // Common searches are deterministic; do them immediately without the local LLM.
         if ((text.contains("youtube") || text.contains("यूट्यूब")) && looksLikeSearch(text)) {
             return Result(searchYouTube(context, raw))
@@ -77,6 +81,30 @@ object CommandEngine {
             }
             else -> Result("मैंने सुना: $raw।", needsAi = true)
         }
+    }
+
+    private fun isWhatsAppMessageIntent(text: String): Boolean {
+        val hasWhatsApp = listOf("whatsapp", "व्हाट्सऐप", "व्हाट्सएप").any { text.contains(it) }
+        val hasMessageVerb = listOf("मैसेज", "संदेश", "message", "msg").any { text.contains(it) }
+        return hasWhatsApp && hasMessageVerb
+    }
+
+    private fun extractWhatsAppMessage(raw: String): String {
+        val s = raw.trim()
+        val lower = s.lowercase()
+        for (marker in listOf("मैसेज", "संदेश", "message", "msg")) {
+            val idx = lower.indexOf(marker.lowercase())
+            if (idx >= 0) {
+                val after = s.substring(idx + marker.length).trim().removePrefix(":").trim()
+                val cleaned = after.replace(
+                    Regex("^(करो|करना|भेजो|भेजना|लिखो|लिखना)\\s+"),
+                    "",
+                    ignoreCase = true
+                ).trim()
+                if (cleaned.isNotBlank()) return cleaned
+            }
+        }
+        return ""
     }
 
     private fun looksLikeSearch(text: String): Boolean =
