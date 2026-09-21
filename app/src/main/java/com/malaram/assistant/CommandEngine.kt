@@ -96,11 +96,9 @@ object CommandEngine {
             val idx = lower.indexOf(marker.lowercase())
             if (idx >= 0) {
                 val after = s.substring(idx + marker.length).trim().removePrefix(":").trim()
-                val cleaned = after.replace(
-                    Regex("^(करो|करना|भेजो|भेजना|लिखो|लिखना)\\s+"),
-                    "",
-                    ignoreCase = true
-                ).trim()
+                val cleaned = Regex("^(करो|करना|भेजो|भेजना|लिखो|लिखना)\\s+", RegexOption.IGNORE_CASE)
+                    .replace(after, "")
+                    .trim()
                 if (cleaned.isNotBlank()) return cleaned
             }
         }
