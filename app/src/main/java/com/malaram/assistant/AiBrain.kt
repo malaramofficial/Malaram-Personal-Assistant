@@ -247,14 +247,59 @@ object AiBrain {
 
     private fun parseAgentAction(raw: String): AgentAction? {
         val cleaned = raw.trim()
+        if (cleaned.isBlank()) return null
+
         try {
-            val json = JSONObject(cleaned.substringAfter("{", cleaned).substringBeforeLast("}", cleaned))
-            val action = json.optString("action").trim().lowercase()
-            if (action.isNotBlank()) return AgentAction(action, json.optString("argument").trim())
+            val jsonText = cleaned.substringAfter("{", "").substringBeforeLast("}", "")
+            if (jsonText.isNotBlank()) {
+                val json = JSONObject("{$jsonText}")
+                val action = json.optString("action").trim().lowercase()
+                val argument = when {
+                    json.has("argument") -> json.optString("argument").trim()
+                    json.has("value") -> json.optString("value").trim()
+                    json.has("text") -> json.optString("text").trim()
+                    json.has("query") -> json.optString("query").trim()
+                    else -> ""
+                }
+                if (action.isNotBlank()) return AgentAction(action, argument)
+            }
         } catch (_: Exception) { }
-        val action = Regex("ACTION\\s*=\\s*([^\\n|]+)", RegexOption.IGNORE_CASE).find(cleaned)?.groupValues?.getOrNull(1)?.trim()?.lowercase() ?: return null
-        val argument = Regex("(?:ARG|ARGUMENT)\\s*=\\s*(.*)", RegexOption.IGNORE_CASE).find(cleaned)?.groupValues?.getOrNull(1)?.trim() ?: ""
-        return AgentAction(action, argument)
+
+        val actionMatch = Regex("ACTION\\s*[:=]\\s*([^\\n|]+)", RegexOption.IGNORE_CASE).find(cleaned)
+        if (actionMatch != null) {
+            val action = actionMatch.groupValues[1].trim().lowercase()
+            val argument = Regex("(?:ARG|ARGUMENT|VALUE|TEXT)\\s*[:=]\\s*(.*)", RegexOption.IGNORE_CASE)
+                .find(cleaned)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+            return AgentAction(action, argument)
+        }
+
+        // Small-model natural-language fallback.
+        val oneLine = cleaned.replace(Regex("\\s+"), " ").trim()
+        val lower = oneLine.lowercase()
+        fun afterAny(vararg prefixes: String): String =
+            prefixes.firstNotNullOfOrNull { p ->
+                if (lower.startsWith(p)) oneLine.substring(p.length).trim() else null
+            }.orEmpty()
+
+        when {
+            lower == "done" || lower.contains("काम पूरा") || lower.contains("कार्य पूरा") ->
+                return AgentAction("done", "")
+            lower == "back" || lower.contains("वापस जाए") || lower.contains("वापस जाओ") ->
+                return AgentAction("back", "")
+            lower == "enter" || lower == "send" || lower == "भेजो" || lower.contains("एंटर") ->
+                return AgentAction("enter", "")
+            lower.startsWith("open_app") || lower.startsWith("open app") ->
+                return AgentAction("open_app", afterAny("open_app", "open app"))
+            lower.startsWith("click ") || lower.startsWith("क्लिक ") ->
+                return AgentAction("click", afterAny("click ", "क्लिक "))
+            lower.startsWith("type ") || lower.startsWith("लिखो ") ->
+                return AgentAction("type", afterAny("type ", "लिखो "))
+            lower.startsWith("wait") || lower.startsWith("रुको") ->
+                return AgentAction("wait", "")
+            lower.contains("open whatsapp") || lower.contains("व्हाट्सऐप खोल") || lower.contains("व्हाट्सएप खोल") ->
+                return AgentAction("open_app", "WhatsApp")
+        }
+        return null
     }
 
     fun cancelAgent() {
