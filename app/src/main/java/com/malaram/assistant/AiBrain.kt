@@ -40,6 +40,7 @@ object AiBrain {
     private const val KEY_DOWNLOAD_ID = "download_id"
     private const val PROVIDER_REMOTE = "remote"
     private const val PROVIDER_LOCAL = "local"
+    private const val PROVIDER_TERMUX = "termux"
     private const val DEFAULT_ENDPOINT = "https://api.openai.com"
     private const val DEFAULT_MODEL = "gpt-4o-mini"
     private const val KEYSTORE = "AndroidKeyStore"
@@ -105,6 +106,22 @@ object AiBrain {
 
     fun configuredModel(context: Context): String =
         prefs(context).getString(KEY_MODEL, DEFAULT_MODEL) ?: DEFAULT_MODEL
+
+    fun configureTermux(context: Context, endpoint: String = "http://127.0.0.1:8080", model: String = "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf") {
+        val cleanEndpoint = endpoint.trim().ifBlank { "http://127.0.0.1:8080" }.trimEnd('/')
+        val uri = Uri.parse(cleanEndpoint)
+        require(uri.host == "127.0.0.1" || uri.host == "localhost") {
+            "Termux Local AI के लिए अभी केवल इसी फोन का 127.0.0.1/localhost server स्वीकार है।"
+        }
+        require(uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) {
+            "Termux AI endpoint http/https होना चाहिए।"
+        }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_PROVIDER, PROVIDER_TERMUX)
+            .putString(KEY_ENDPOINT, cleanEndpoint)
+            .putString(KEY_MODEL, model.trim().ifBlank { "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf" })
+            .apply()
+    }
 
     fun useLocal(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_PROVIDER, PROVIDER_LOCAL).apply()
