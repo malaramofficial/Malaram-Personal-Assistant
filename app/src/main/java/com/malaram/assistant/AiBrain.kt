@@ -359,7 +359,8 @@ object AiBrain {
                     }
                     val screen = AssistantAccessibilityService.readScreen().replace(Regex("\\s+"), " ").take(5000)
                     val hash = AssistantAccessibilityService.screenshotHash()
-                    val state = (hash.ifBlank { screen }).take(512)
+                    val activePackage = AssistantAccessibilityService.activePackageName()
+                    val state = (hash.ifBlank { screen.ifBlank { activePackage } }).take(512)
                     if (state.isNotBlank() && state == lastState) repeatedStateCount++ else repeatedStateCount = 0
                     if (repeatedStateCount >= 3) {
                         finalText = "स्क्रीन लगातार नहीं बदल रही थी, इसलिए Agent को सुरक्षित रूप से रोक दिया।"
@@ -368,9 +369,12 @@ object AiBrain {
                     lastState = state
                     val prompt = "/no_think\nकाम: " + task + "\nस्क्रीन टेक्स्ट: " + screen.ifBlank { "(खाली)" } +
                         "\nस्क्रीन hash: " + hash.ifBlank { "(उपलब्ध नहीं)" } +
+                        "\nActive package: " + activePackage.ifBlank { "(उपलब्ध नहीं)" } +
                         "\nस्टेप: " + stepIndex + "\nकेवल अगला atomic action दो। JSON या ACTION=... format स्वीकार है। " +
-                        "Allowed: open_app, click, type, enter, back, swipe_up, swipe_down, wait, done, answer. " +
-                        "हर action के बाद नई स्क्रीन देखकर ही अगला निर्णय लो। बिना evidence के done मत दो; ऐप खुलना अकेले सफलता नहीं है।"
+                        "Allowed: open_app, click, click_text, click_desc, click_id, long_click, tap, long_tap, type, clear, enter, back, home, recents, notifications, quick_settings, " +
+                        "swipe_up, swipe_down, wait, open_url, dial, share, settings, read_screen, screenshot, done, answer. " +
+                        "tap/long_tap में argument 'x,y' हो सकता है; x,y 0..1 normalized या screen pixels हो सकते हैं। " +
+                        "हर action के बाद नई स्क्रीन देखकर ही अगला निर्णय लो। बिना evidence के done मत दो। सिर्फ ऐप खोलने का आदेश हो तो ऐप launch होना ही पर्याप्त सफलता है।"
                     val raw = provider(context).complete(context, SYSTEM_PROMPT, prompt, 90)
                     val parsed = parseAgentAction(raw)
                     if (parsed == null) {
@@ -392,17 +396,25 @@ object AiBrain {
                             val before = state
                             finalText = CommandEngine.executeAgentAction(context, parsed.action, parsed.argument)
                             actionsTaken++
-                            Thread.sleep(250)
-                            val afterHash = AssistantAccessibilityService.screenshotHash()
-                            val afterScreen = AssistantAccessibilityService.readScreen().replace(Regex("\\s+"), " ").take(1200)
+                            var afterHash = ""
+                            var afterScreen = ""
+                            var afterPackage = ""
+                            repeat(5) { attempt ->
+                                Thread.sleep(if (attempt == 0) 300L else 400L)
+                                afterHash = AssistantAccessibilityService.screenshotHash()
+                                afterScreen = AssistantAccessibilityService.readScreen().replace(Regex("\\s+"), " ").take(1200)
+                                afterPackage = AssistantAccessibilityService.activePackageName()
+                                if (afterScreen.isNotBlank() || afterHash.isNotBlank() || afterPackage.isNotBlank()) return@repeat
+                            }
                             val failed = finalText.contains("नहीं") || finalText.contains("उपलब्ध नहीं") || finalText.contains("अज्ञात")
                             if (failed) {
                                 finalText = "Action '" + parsed.action + "' सफल नहीं हुआ: " + finalText
                                 break
                             }
-                            if (afterScreen.isBlank() && afterHash.isBlank()) {
-                                finalText = "Action के बाद स्क्रीन state verify नहीं हो सकी।"
-                                break
+                            if (afterScreen.isBlank() && afterHash.isBlank() && afterPackage.isBlank()) {
+                                // Accessibility hierarchy can be temporarily unavailable while an app/window is changing.
+                                // Do not falsely report failure; the next agent step will retry reading the active screen.
+                                Thread.sleep(500)
                             }
                         }
                     }
