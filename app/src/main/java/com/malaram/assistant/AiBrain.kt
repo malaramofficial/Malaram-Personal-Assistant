@@ -25,8 +25,8 @@ object AiBrain {
     private var cachedModel: dev.ffmpegkit.llama.LlamaModel? = null
     @Volatile private var agentRunning = false
     @Volatile private var agentCancelled = false
-    private const val AGENT_MAX_STEPS = 10
-    private const val AGENT_TIMEOUT_MS = 60_000L
+    private const val AGENT_MAX_STEPS = 20
+    private const val AGENT_TIMEOUT_MS = 90_000L
 
     const val MODEL_FILE = "Qwen3-0.6B-Q4_K_M.gguf"
     const val MODEL_MIN_BYTES = 350_000_000L
@@ -50,8 +50,10 @@ object AiBrain {
         तुम Malaram Personal Assistant के AI Brain हो।
         उपयोगकर्ता मुख्यतः हिंदी में बात करता है।
         सरल, प्राकृतिक और संक्षिप्त हिंदी में उत्तर दो।
-        फोन action के लिए अनुमान लगाकर संवेदनशील काम मत करो।
-        भुगतान, OTP, पासवर्ड, खरीद, deletion और account changes में पुष्टि जरूरी है।
+        तुम किसी एक ऐप तक सीमित assistant नहीं हो। उपलब्ध Android UI, Accessibility Service, intents और installed apps के आधार पर सामान्य काम करने की कोशिश करो।
+        पहले स्क्रीन की वास्तविक स्थिति पढ़ो, फिर एक छोटा atomic action करो, फिर नई स्क्रीन देखकर आगे बढ़ो।
+        किसी खास ऐप के लिए hard-coded workflow मानकर मत चलो; स्क्रीन पर मिले text, content-description, view-id और layout के आधार पर निर्णय लो।
+        भुगतान, OTP, पासवर्ड, खरीद, deletion, account changes और दूसरे high-impact काम बिना user confirmation के मत करो।
     """
 
     fun configureRemote(context: Context, endpoint: String, model: String, apiKey: String) {
@@ -292,8 +294,34 @@ object AiBrain {
                 return AgentAction("open_app", afterAny("open_app", "open app"))
             lower.startsWith("click ") || lower.startsWith("क्लिक ") ->
                 return AgentAction("click", afterAny("click ", "क्लिक "))
+            lower.startsWith("click_text ") || lower.startsWith("click text ") ->
+                return AgentAction("click_text", afterAny("click_text ", "click text "))
+            lower.startsWith("click_desc ") || lower.startsWith("click description ") ->
+                return AgentAction("click_desc", afterAny("click_desc ", "click description "))
+            lower.startsWith("click_id ") || lower.startsWith("click id ") ->
+                return AgentAction("click_id", afterAny("click_id ", "click id "))
+            lower.startsWith("long_click ") || lower.startsWith("long click ") || lower.startsWith("लंबा क्लिक ") ->
+                return AgentAction("long_click", afterAny("long_click ", "long click ", "लंबा क्लिक "))
+            lower.startsWith("tap ") || lower.startsWith("टैप ") ->
+                return AgentAction("tap", afterAny("tap ", "टैप "))
+            lower.startsWith("long_tap ") || lower.startsWith("long tap ") ->
+                return AgentAction("long_tap", afterAny("long_tap ", "long tap "))
             lower.startsWith("type ") || lower.startsWith("लिखो ") ->
                 return AgentAction("type", afterAny("type ", "लिखो "))
+            lower == "clear" || lower.contains("टेक्स्ट साफ") ->
+                return AgentAction("clear", "")
+            lower.startsWith("open_url ") || lower.startsWith("open url ") ->
+                return AgentAction("open_url", afterAny("open_url ", "open url "))
+            lower.startsWith("dial ") || lower.startsWith("डायल ") ->
+                return AgentAction("dial", afterAny("dial ", "डायल "))
+            lower.startsWith("share ") || lower.startsWith("शेयर ") ->
+                return AgentAction("share", afterAny("share ", "शेयर "))
+            lower.startsWith("settings ") || lower.startsWith("सेटिंग ") ->
+                return AgentAction("settings", afterAny("settings ", "सेटिंग "))
+            lower == "home" || lower == "होम" -> return AgentAction("home", "")
+            lower == "recents" || lower.contains("हाल के ऐप") -> return AgentAction("recents", "")
+            lower.contains("notifications") || lower.contains("नोटिफिकेशन") -> return AgentAction("notifications", "")
+            lower.contains("quick settings") || lower.contains("क्विक सेटिंग") -> return AgentAction("quick_settings", "")
             lower.startsWith("wait") || lower.startsWith("रुको") ->
                 return AgentAction("wait", "")
             lower.contains("open whatsapp") || lower.contains("व्हाट्सऐप खोल") || lower.contains("व्हाट्सएप खोल") ->
@@ -370,10 +398,6 @@ object AiBrain {
                             val failed = finalText.contains("नहीं") || finalText.contains("उपलब्ध नहीं") || finalText.contains("अज्ञात")
                             if (failed) {
                                 finalText = "Action '" + parsed.action + "' सफल नहीं हुआ: " + finalText
-                                break
-                            }
-                            if (afterHash.isNotBlank() && before == afterHash && parsed.action !in setOf("wait", "type")) {
-                                finalText = "Action के बाद स्क्रीन में कोई बदलाव नहीं मिला; Agent को रोक दिया।"
                                 break
                             }
                             if (afterScreen.isBlank() && afterHash.isBlank()) {
